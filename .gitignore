@@ -1,0 +1,143 @@
+# ===================================
+# ONAI OCR - Git Ignore
+# ===================================
+
+# ===================================
+# Variables de Entorno (DESHABILITADO - Repo Privado)
+# ===================================
+# NOTA: Los .env están permitidos porque el repo es PRIVADO
+# Si el repo se hace público, DESCOMENTAR estas líneas
+# .env
+# .env.local
+# .env.production
+# .env.development
+# .env.test
+# *.env
+# backend/.env
+# frontend/.env
+# frontend/.env.local
+
+# ===================================
+# Node.js
+# ===================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# ===================================
+# Dependencias
+# ===================================
+package-lock.json
+yarn.lock
+
+# ===================================
+# Build outputs
+# ===================================
+dist/
+build/
+out/
+.next/
+backend/dist/
+frontend/.next/
+frontend/out/
+
+# ===================================
+# Testing
+# ===================================
+coverage/
+.nyc_output/
+*.test.js.snap
+
+# ===================================
+# IDEs y Editores
+# ===================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ===================================
+# Logs
+# ===================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# ===================================
+# TypeScript
+# ===================================
+*.tsbuildinfo
+.tsbuildinfo
+
+# ===================================
+# Temp files
+# ===================================
+tmp/
+temp/
+*.tmp
+
+# ===================================
+# Sistema Operativo
+# ===================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ===================================
+# Docker (opcional, solo ignorar si no quieres versionar)
+# ===================================
+# docker-compose.override.yml
+
+# ===================================
+# Credenciales y Tokens (DESHABILITADO - Repo Privado)
+# ===================================
+# NOTA: Permitido porque el repo es PRIVADO
+# Si el repo se hace público, DESCOMENTAR estas líneas
+# Google OAuth
+# credentials.json
+# token.json
+# google-credentials.json
+# google-token.json
+
+# ===================================
+# Base de Datos Local
+# ===================================
+*.sqlite
+*.sqlite3
+*.db
+
+# ===================================
+# Archivos de prueba temporales
+# ===================================
+backend/tests/*.pdf
+backend/tests/*.jpg
+backend/tests/*.png
+backend/tests/temp/
+backend/tests/uploads/
+
+# ===================================
+# Cache
+# ===================================
+.cache/
+.eslintcache
+.stylelintcache
+
+# ===================================
+# Vercel
+# ===================================
+.vercel
+
+# ===================================
+# Turbo
+# ===================================
+.turbo
+

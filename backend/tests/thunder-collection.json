@@ -1,0 +1,181 @@
+{
+  "client": "Thunder Client",
+  "collectionName": "ONAI OCR API",
+  "dateExported": "2024-11-01",
+  "version": "1.1",
+  "folders": [
+    {
+      "id": "auth-folder",
+      "name": "🔐 Autenticación",
+      "containerId": "",
+      "created": "2024-11-01T18:00:00.000Z",
+      "sortNum": 10000
+    },
+    {
+      "id": "documents-folder",
+      "name": "📄 Documentos",
+      "containerId": "",
+      "created": "2024-11-01T18:00:00.000Z",
+      "sortNum": 20000
+    },
+    {
+      "id": "chat-folder",
+      "name": "💬 Chat RAG",
+      "containerId": "",
+      "created": "2024-11-01T18:00:00.000Z",
+      "sortNum": 30000
+    }
+  ],
+  "requests": [
+    {
+      "id": "register-request",
+      "name": "Register",
+      "url": "http://localhost:4000/api/auth/register",
+      "method": "POST",
+      "sortNum": 10000,
+      "created": "2024-11-01T18:00:00.000Z",
+      "modified": "2024-11-01T18:00:00.000Z",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "type": "json",
+        "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\",\n  \"name\": \"Usuario Test\"\n}",
+        "form": []
+      },
+      "tests": [],
+      "containerId": "auth-folder"
+    },
+    {
+      "id": "login-request",
+      "name": "Login",
+      "url": "http://localhost:4000/api/auth/login",
+      "method": "POST",
+      "sortNum": 20000,
+      "created": "2024-11-01T18:00:00.000Z",
+      "modified": "2024-11-01T18:00:00.000Z",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "type": "json",
+        "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\"\n}",
+        "form": []
+      },
+      "tests": [],
+      "containerId": "auth-folder"
+    },
+    {
+      "id": "profile-request",
+      "name": "Get Profile",
+      "url": "http://localhost:4000/api/auth/profile",
+      "method": "GET",
+      "sortNum": 30000,
+      "created": "2024-11-01T18:00:00.000Z",
+      "modified": "2024-11-01T18:00:00.000Z",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{token}}"
+        }
+      ],
+      "tests": [],
+      "containerId": "auth-folder"
+    },
+    {
+      "id": "upload-request",
+      "name": "Upload Document",
+      "url": "http://localhost:4000/api/documents/upload",
+      "method": "POST",
+      "sortNum": 40000,
+      "created": "2024-11-01T18:00:00.000Z",
+      "modified": "2024-11-01T18:00:00.000Z",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{token}}"
+        }
+      ],
+      "body": {
+        "type": "formdata",
+        "raw": "",
+        "form": [
+          {
+            "name": "file",
+            "value": "",
+            "type": "file"
+          }
+        ]
+      },
+      "tests": [],
+      "containerId": "documents-folder"
+    },
+    {
+      "id": "list-documents-request",
+      "name": "List Documents",
+      "url": "http://localhost:4000/api/documents",
+      "method": "GET",
+      "sortNum": 50000,
+      "created": "2024-11-01T18:00:00.000Z",
+      "modified": "2024-11-01T18:00:00.000Z",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{token}}"
+        }
+      ],
+      "tests": [],
+      "containerId": "documents-folder"
+    },
+    {
+      "id": "get-document-request",
+      "name": "Get Document by ID",
+      "url": "http://localhost:4000/api/documents/1",
+      "method": "GET",
+      "sortNum": 60000,
+      "created": "2024-11-01T18:00:00.000Z",
+      "modified": "2024-11-01T18:00:00.000Z",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{token}}"
+        }
+      ],
+      "tests": [],
+      "containerId": "documents-folder"
+    },
+    {
+      "id": "chat-query-request",
+      "name": "Send Query",
+      "url": "http://localhost:4000/api/chat/query",
+      "method": "POST",
+      "sortNum": 70000,
+      "created": "2024-11-01T18:00:00.000Z",
+      "modified": "2024-11-01T18:00:00.000Z",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{token}}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "type": "json",
+        "raw": "{\n  \"query\": \"¿Cuántos documentos he subido?\"\n}",
+        "form": []
+      },
+      "tests": [],
+      "containerId": "chat-folder"
+    }
+  ]
+}
+

@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # =====================================
+  # PostgreSQL Database
+  # =====================================
+  postgres:
+    image: postgres:14-alpine
+    container_name: onai-ocr-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-onai_ocr}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - onai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =====================================
+  # Backend (NestJS) - TODO: Descomentar cuando esté listo
+  # =====================================
+  # backend:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: onai-ocr-backend
+  #   restart: always
+  #   environment:
+  #     - DATABASE_HOST=postgres
+  #     - DATABASE_PORT=5432
+  #     - DATABASE_USER=${DB_USER:-postgres}
+  #     - DATABASE_PASSWORD=${DB_PASSWORD:-postgres}
+  #     - DATABASE_NAME=${DB_NAME:-onai_ocr}
+  #     - JWT_SECRET=${JWT_SECRET}
+  #     - PORT=4000
+  #   ports:
+  #     - "4000:4000"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - onai-network
+
+  # =====================================
+  # Frontend (Next.js) - TODO: Descomentar cuando esté listo
+  # =====================================
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: onai-ocr-frontend
+  #   restart: always
+  #   environment:
+  #     - NEXT_PUBLIC_API_URL=http://localhost:4000/api
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - onai-network
+
+# =====================================
+# Volumes
+# =====================================
+volumes:
+  postgres_data:
+    driver: local
+
+# =====================================
+# Networks
+# =====================================
+networks:
+  onai-network:
+    driver: bridge
+
