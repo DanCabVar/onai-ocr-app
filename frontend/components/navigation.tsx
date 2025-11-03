@@ -27,17 +27,19 @@ interface NavigationProps {
 export function Navigation({ onDocumentUploaded }: NavigationProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const [mounted, setMounted] = useState(false)
   const [userName, setUserName] = useState<string>("")
   const [userInitials, setUserInitials] = useState<string>("U")
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
     const user = authService.getStoredUser()
     if (user) {
       setUserName(user.name || user.email)
       // Obtener iniciales del nombre
       const initials = user.name
-        ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
+        ? user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0, 2)
         : user.email[0].toUpperCase()
       setUserInitials(initials)
     }
@@ -103,7 +105,7 @@ export function Navigation({ onDocumentUploaded }: NavigationProps) {
               <Button variant="ghost" size="icon" className="rounded-full">
                 <Avatar className="h-8 w-8">
                   <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
-                    {userInitials}
+                    {mounted ? userInitials : "U"}
                   </AvatarFallback>
                 </Avatar>
               </Button>
@@ -111,9 +113,9 @@ export function Navigation({ onDocumentUploaded }: NavigationProps) {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">{userName}</p>
+                  <p className="text-sm font-medium leading-none">{mounted ? userName : "Usuario"}</p>
                   <p className="text-xs leading-none text-muted-foreground">
-                    {authService.getStoredUser()?.email}
+                    {mounted ? authService.getStoredUser()?.email : ""}
                   </p>
                 </div>
               </DropdownMenuLabel>

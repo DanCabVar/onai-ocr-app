@@ -5,9 +5,11 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 
 export function ThemeToggle() {
+  const [mounted, setMounted] = useState(false)
   const [theme, setTheme] = useState<"light" | "dark">("dark")
 
   useEffect(() => {
+    setMounted(true)
     // Check for saved theme preference or default to dark
     const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null
     const initialTheme = savedTheme || "dark"
@@ -20,6 +22,14 @@ export function ThemeToggle() {
     setTheme(newTheme)
     localStorage.setItem("theme", newTheme)
     document.documentElement.classList.toggle("dark", newTheme === "dark")
+  }
+
+  if (!mounted) {
+    return (
+      <Button variant="ghost" size="icon" disabled>
+        <Sun className="h-5 w-5" />
+      </Button>
+    )
   }
 
   return (

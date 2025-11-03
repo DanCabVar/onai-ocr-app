@@ -1,28 +1,19 @@
-# Node modules
-node_modules
-npm-debug.log
-yarn-error.log
-
-# Frontend
-frontend/node_modules
-frontend/.next
-frontend/out
-frontend/build
-frontend/.env.local
-
-# Backend
-backend/node_modules
-backend/dist
-backend/.env
-
 # Git
 .git
 .gitignore
 
-# Docker
-Dockerfile
-docker-compose.yml
-.dockerignore
+# CI/CD
+.github
+.gitlab-ci.yml
+
+# Documentation
+*.md
+docs/
+
+# Environment variables
+.env
+.env.*
+!.env.example
 
 # IDE
 .vscode
@@ -42,7 +33,7 @@ logs
 coverage
 .nyc_output
 
-# Misc
-*.md
-!README.md
-
+# Dependencies
+node_modules
+dist
+.pnpm-store

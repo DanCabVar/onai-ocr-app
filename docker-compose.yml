@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # =====================================
   # PostgreSQL Database
@@ -25,47 +23,85 @@ services:
       retries: 5
 
   # =====================================
-  # Backend (NestJS) - TODO: Descomentar cuando esté listo
+  # Backend (NestJS)
   # =====================================
-  # backend:
-  #   build:
-  #     context: ./backend
-  #     dockerfile: Dockerfile
-  #   container_name: onai-ocr-backend
-  #   restart: always
-  #   environment:
-  #     - DATABASE_HOST=postgres
-  #     - DATABASE_PORT=5432
-  #     - DATABASE_USER=${DB_USER:-postgres}
-  #     - DATABASE_PASSWORD=${DB_PASSWORD:-postgres}
-  #     - DATABASE_NAME=${DB_NAME:-onai_ocr}
-  #     - JWT_SECRET=${JWT_SECRET}
-  #     - PORT=4000
-  #   ports:
-  #     - "4000:4000"
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   networks:
-  #     - onai-network
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: onai-ocr-backend
+    restart: always
+    environment:
+      # Database
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DB_USER:-postgres}
+      - DATABASE_PASSWORD=${DB_PASSWORD:-postgres}
+      - DATABASE_NAME=${DB_NAME:-onai_ocr}
+      
+      # JWT
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRATION=${JWT_EXPIRATION:-7d}
+      
+      # Server
+      - PORT=4000
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      
+      # Google Drive OAuth
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:4000/api/google/callback}
+      - GOOGLE_SCOPES=${GOOGLE_SCOPES:-https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/drive}
+      - GOOGLE_DRIVE_ROOT_FOLDER_ID=${GOOGLE_DRIVE_ROOT_FOLDER_ID}
+      
+      # Google AI (Gemini)
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash-exp}
+      - CLASSIFICATION_CONFIDENCE_THRESHOLD=${CLASSIFICATION_CONFIDENCE_THRESHOLD:-0.7}
+      
+      # Mistral AI (OCR)
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+      - MISTRAL_OCR_MODEL=${MISTRAL_OCR_MODEL:-mistral-ocr-latest}
+      - MISTRAL_VISION_MODEL=${MISTRAL_VISION_MODEL:-pixtral-12b-latest}
+      
+      # Optional
+      - OTHERS_FOLDER_NAME=${OTHERS_FOLDER_NAME:-Otros Documentos}
+      - OTHERS_FOLDER_DESCRIPTION=${OTHERS_FOLDER_DESCRIPTION:-Documentos sin clasificación automática}
+      
+    ports:
+      - "${BACKEND_PORT:-4000}:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - onai-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/api/google/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   # =====================================
-  # Frontend (Next.js) - TODO: Descomentar cuando esté listo
+  # Frontend (Next.js)
   # =====================================
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #     dockerfile: Dockerfile
-  #   container_name: onai-ocr-frontend
-  #   restart: always
-  #   environment:
-  #     - NEXT_PUBLIC_API_URL=http://localhost:4000/api
-  #   ports:
-  #     - "3000:3000"
-  #   depends_on:
-  #     - backend
-  #   networks:
-  #     - onai-network
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000/api}
+    container_name: onai-ocr-frontend
+    restart: always
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000/api}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - onai-network
 
 # =====================================
 # Volumes
