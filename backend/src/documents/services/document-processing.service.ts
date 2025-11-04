@@ -76,10 +76,8 @@ export class DocumentProcessingService {
       );
       this.logger.log(`✅ OCR completado: ${ocrResult.text.length} caracteres (método: ${ocrResult.metadata?.method || 'standard'})`);
 
-      // PASO 4: Obtener tipos de documento disponibles
-      const availableTypes = await this.documentTypeRepository.find({
-        where: { userId: user.id },
-      });
+      // PASO 4: Obtener tipos de documento disponibles (compartidos entre todos los usuarios)
+      const availableTypes = await this.documentTypeRepository.find();
 
       if (availableTypes.length === 0) {
         throw new Error(
@@ -242,9 +240,9 @@ export class DocumentProcessingService {
   private async getOrCreateOthersFolder(user: User): Promise<DocumentType> {
     const othersName = process.env.OTHERS_FOLDER_NAME || 'Otros Documentos';
 
-    // Buscar si ya existe
+    // Buscar si ya existe (compartido entre todos los usuarios)
     let othersFolder = await this.documentTypeRepository.findOne({
-      where: { userId: user.id, name: othersName },
+      where: { name: othersName },
     });
 
     if (othersFolder) {

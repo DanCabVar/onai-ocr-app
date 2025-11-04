@@ -24,9 +24,9 @@ export class DocumentTypesService {
   ) {}
 
   async create(createDto: CreateDocumentTypeDto, user: User) {
-    // Verificar si ya existe un tipo con ese nombre para este usuario
+    // Verificar si ya existe un tipo con ese nombre (compartido entre todos los usuarios)
     const existing = await this.documentTypeRepository.findOne({
-      where: { name: createDto.name, userId: user.id },
+      where: { name: createDto.name },
     });
 
     if (existing) {
@@ -82,7 +82,6 @@ export class DocumentTypesService {
 
   async findAll(user: User) {
     const documentTypes = await this.documentTypeRepository.find({
-      where: { userId: user.id },
       order: { createdAt: 'DESC' },
     });
 
@@ -100,7 +99,7 @@ export class DocumentTypesService {
 
   async findOne(id: number, user: User) {
     const documentType = await this.documentTypeRepository.findOne({
-      where: { id, userId: user.id },
+      where: { id },
     });
 
     if (!documentType) {
@@ -121,7 +120,7 @@ export class DocumentTypesService {
 
   async update(id: number, updateDto: UpdateDocumentTypeDto, user: User) {
     const documentType = await this.documentTypeRepository.findOne({
-      where: { id, userId: user.id },
+      where: { id },
     });
 
     if (!documentType) {
@@ -131,7 +130,7 @@ export class DocumentTypesService {
     // Si se está cambiando el nombre, verificar que no exista otro con ese nombre
     if (updateDto.name && updateDto.name !== documentType.name) {
       const existing = await this.documentTypeRepository.findOne({
-        where: { name: updateDto.name, userId: user.id },
+        where: { name: updateDto.name },
       });
 
       if (existing) {
@@ -162,7 +161,7 @@ export class DocumentTypesService {
 
   async remove(id: number, user: User) {
     const documentType = await this.documentTypeRepository.findOne({
-      where: { id, userId: user.id },
+      where: { id },
       relations: ['documents'],
     });
 

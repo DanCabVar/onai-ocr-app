@@ -85,10 +85,8 @@ export class DocumentTypeInferenceService {
   ): Promise<Map<string, { files: Express.Multer.File[], existingType: DocumentType | null }>> {
     this.logger.log(`🔍 Clasificando ${files.length} documentos...`);
 
-    // Obtener todos los tipos existentes del usuario
-    const existingTypes = await this.documentTypeRepository.find({
-      where: { userId: user.id },
-    });
+    // Obtener todos los tipos existentes (compartidos entre todos los usuarios)
+    const existingTypes = await this.documentTypeRepository.find();
 
     const classifications = new Map<string, { files: Express.Multer.File[], existingType: DocumentType | null }>();
 
@@ -358,9 +356,9 @@ Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
       try {
         this.logger.log(`   📁 Creando tipo "${consolidated.typeName}"...`);
 
-        // 1. Verificar si ya existe un tipo con ese nombre
+        // 1. Verificar si ya existe un tipo con ese nombre (compartido entre todos los usuarios)
         const existingType = await this.documentTypeRepository.findOne({
-          where: { userId: user.id, name: consolidated.typeName },
+          where: { name: consolidated.typeName },
         });
 
         let documentType: DocumentType;
