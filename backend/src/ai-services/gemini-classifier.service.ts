@@ -203,7 +203,7 @@ Responde SOLO con el JSON, sin texto adicional.`;
         .join('\n');
 
       const prompt = `Eres un experto en extracción de datos de documentos. Analiza esta imagen/PDF y extrae:
-1. Un RESUMEN breve del documento (1-2 líneas)
+1. Un RESUMEN breve del documento EN ESPAÑOL (1-2 líneas)
 2. Los valores de los campos solicitados
 
 **TIPO DE DOCUMENTO:** ${documentType.name}
@@ -213,7 +213,7 @@ Responde SOLO con el JSON, sin texto adicional.`;
 ${fieldsDescription}
 
 **INSTRUCCIONES:**
-1. Genera un resumen conciso del contenido del documento
+1. Genera un resumen conciso del contenido del documento EN ESPAÑOL
 2. Extrae SOLO los campos solicitados
 3. Respeta los tipos de datos especificados
 4. Si un campo no se encuentra en el documento, usa null como valor
@@ -230,7 +230,7 @@ ${fieldsDescription}
 
 **FORMATO DE RESPUESTA (JSON):**
 {
-  "summary": "Breve resumen del documento (1-2 líneas)",
+  "summary": "Breve resumen del documento EN ESPAÑOL (1-2 líneas)",
   "fields": [
     ${fields.map((f) => `{
       "name": "${f.name}",
@@ -242,6 +242,8 @@ ${fieldsDescription}
     }`).join(',\n    ')}
   ]
 }
+
+**IMPORTANTE:** El resumen DEBE estar en español, independientemente del idioma del documento original.
 
 Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
 
@@ -289,7 +291,7 @@ Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
         .join('\n');
 
       const prompt = `Eres un experto en extracción de datos de documentos. Analiza el siguiente texto y extrae:
-1. Un RESUMEN breve del documento (1-2 líneas)
+1. Un RESUMEN breve del documento (1-2 líneas) EN ESPAÑOL
 2. Los valores de los campos solicitados
 
 **TIPO DE DOCUMENTO:** ${documentType.name}
@@ -302,7 +304,7 @@ ${fieldsDescription}
 ${ocrText}
 
 **INSTRUCCIONES:**
-1. Genera un resumen conciso del contenido del documento
+1. Genera un resumen conciso del contenido del documento EN ESPAÑOL
 2. Extrae SOLO los campos solicitados
 3. Respeta los tipos de datos especificados
 4. Si un campo no se encuentra en el texto, usa null como valor
@@ -320,7 +322,7 @@ ${ocrText}
 
 **FORMATO DE RESPUESTA (JSON):**
 {
-  "summary": "Breve resumen del documento (1-2 líneas)",
+  "summary": "Breve resumen del documento EN ESPAÑOL (1-2 líneas)",
   "fields": [
     ${fields.map((f) => `{
       "name": "${f.name}",
@@ -365,7 +367,7 @@ Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
 
       const prompt = `Eres un experto analista de documentos. Analiza esta imagen/PDF y determina:
 1. QUÉ TIPO de documento es (ej: "Certificado Médico", "Recibo", "Contrato", etc.)
-2. Un RESUMEN breve del documento (1-2 líneas)
+2. Un RESUMEN breve del documento EN ESPAÑOL (1-2 líneas)
 3. Los CAMPOS CLAVE más importantes que se encuentran en el documento
 
 **INSTRUCCIONES:**
@@ -389,7 +391,7 @@ Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
 **FORMATO DE RESPUESTA (JSON):**
 {
   "inferred_type": "Nombre del tipo de documento identificado",
-  "summary": "Breve resumen del contenido del documento (1-2 líneas)",
+  "summary": "Breve resumen del contenido del documento EN ESPAÑOL (1-2 líneas)",
   "key_fields": [
     {
       "name": "nombre_campo",
@@ -401,6 +403,8 @@ Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
     }
   ]
 }
+
+**IMPORTANTE:** El resumen DEBE estar en español, independientemente del idioma del documento original.
 
 Responde SOLO con el JSON, sin texto adicional.`;
 
