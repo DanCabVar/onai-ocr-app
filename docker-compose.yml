@@ -4,7 +4,7 @@ services:
   # =====================================
   postgres:
     image: postgres:14-alpine
-    container_name: onai-ocr-postgres
+    container_name: des-onai-ocr-postgres
     restart: always
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
@@ -29,7 +29,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: onai-ocr-backend
+    container_name: des-onai-ocr-backend
     restart: always
     environment:
       # Database
@@ -91,7 +91,7 @@ services:
       dockerfile: Dockerfile
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000/api}
-    container_name: onai-ocr-frontend
+    container_name: des-onai-ocr-frontend
     restart: always
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000/api}
