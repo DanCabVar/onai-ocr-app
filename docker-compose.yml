@@ -64,10 +64,13 @@ services:
       - MISTRAL_OCR_MODEL=${MISTRAL_OCR_MODEL:-mistral-ocr-latest}
       - MISTRAL_VISION_MODEL=${MISTRAL_VISION_MODEL:-pixtral-12b-latest}
       
+      # Document Processor (Python microservice)
+      - PROCESSOR_URL=${PROCESSOR_URL:-http://processor:8000}
+
       # Optional
       - OTHERS_FOLDER_NAME=${OTHERS_FOLDER_NAME:-Otros Documentos}
       - OTHERS_FOLDER_DESCRIPTION=${OTHERS_FOLDER_DESCRIPTION:-Documentos sin clasificación automática}
-      
+
     ports:
       - "${BACKEND_PORT:-4000}:4000"
     depends_on:
@@ -81,6 +84,58 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  # =====================================
+  # Document Processor (Python/LangGraph)
+  # =====================================
+  processor:
+    build:
+      context: ./processor
+      dockerfile: Dockerfile
+    container_name: onai-ocr-processor
+    restart: always
+    environment:
+      # Database (same as backend)
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DB_USER:-postgres}
+      - DATABASE_PASSWORD=${DB_PASSWORD:-postgres}
+      - DATABASE_NAME=${DB_NAME:-onai_ocr}
+
+      # Google AI (Gemini)
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+
+      # Google Drive OAuth
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:4000/api/google/callback}
+      - GOOGLE_DRIVE_ROOT_FOLDER_ID=${GOOGLE_DRIVE_ROOT_FOLDER_ID}
+
+      # Rate limiting / processing
+      - GEMINI_RPM_LIMIT=${GEMINI_RPM_LIMIT:-10}
+      - GEMINI_DELAY_BETWEEN_CALLS=${GEMINI_DELAY_BETWEEN_CALLS:-6.5}
+      - MAX_BATCH_DOCUMENTS=${MAX_BATCH_DOCUMENTS:-10}
+      - MAX_PARALLEL_CLASSIFICATIONS=${MAX_PARALLEL_CLASSIFICATIONS:-3}
+      - MAX_PARALLEL_EXTRACTIONS=${MAX_PARALLEL_EXTRACTIONS:-2}
+
+      # Server
+      - PORT=8000
+      - DEBUG=${PROCESSOR_DEBUG:-false}
+
+    ports:
+      - "${PROCESSOR_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - onai-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   # =====================================
   # Frontend (Next.js)
