@@ -1,19 +1,25 @@
 """FastAPI server for the document processing microservice.
 
-Exposes a single endpoint that receives files and runs the LangGraph pipeline.
-The NestJS backend calls this service instead of running the processing inline.
+Exposes endpoints to:
+  - Process batches of documents through the LangGraph pipeline
+  - Stream progress via SSE (Server-Sent Events)
+  - Query processing limits
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
 import shutil
 import tempfile
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from app.config import settings
 from app.graph.batch_graph import batch_graph
@@ -39,6 +45,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# In-memory progress store for SSE streaming
+_progress_store: dict[str, dict] = {}
+
 
 @app.get("/health")
 async def health():
@@ -51,14 +60,7 @@ async def process_batch(
     user_id: int = Form(...),
     upload_samples: bool = Form(False),
 ):
-    """Process a batch of documents through the LangGraph pipeline.
-
-    This endpoint:
-    1. Saves uploaded files to temp disk
-    2. Builds initial state
-    3. Invokes the LangGraph batch_graph
-    4. Returns results
-    """
+    """Process a batch of documents through the LangGraph pipeline."""
     if not files:
         raise HTTPException(400, "No se proporcionaron archivos")
     if len(files) < 2:
@@ -66,7 +68,6 @@ async def process_batch(
     if len(files) > settings.max_batch_documents:
         raise HTTPException(400, f"Maximo {settings.max_batch_documents} archivos")
 
-    # Save files to temp directory
     tmp_dir = tempfile.mkdtemp(prefix="onai_batch_")
     file_infos: list[FileInfo] = []
 
@@ -90,7 +91,6 @@ async def process_batch(
             f"(uploadSamples={upload_samples})"
         )
 
-        # Build initial state
         initial_state: BatchState = {
             "user_id": user_id,
             "upload_samples": upload_samples,
@@ -103,8 +103,6 @@ async def process_batch(
             "progress_pct": 0,
         }
 
-        # Run the graph with concurrency control
-        # max_concurrency limits parallel Send() nodes to avoid API rate limits
         config = {
             "max_concurrency": settings.max_parallel_classifications,
         }
@@ -128,8 +126,130 @@ async def process_batch(
         raise HTTPException(500, f"Error en el procesamiento: {e}")
 
     finally:
-        # Clean up temp files
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@app.post("/process-batch-stream")
+async def process_batch_stream(
+    files: list[UploadFile] = File(...),
+    user_id: int = Form(...),
+    upload_samples: bool = Form(False),
+):
+    """Process a batch of documents and stream progress via SSE.
+
+    Returns a Server-Sent Events stream with progress updates, then the final result.
+    Each event has the format:
+      event: progress
+      data: {"step": "classifying", "progress_pct": 25, "message": "..."}
+
+      event: complete
+      data: {"success": true, "created_types": [...], ...}
+
+      event: error
+      data: {"error": "..."}
+    """
+    if not files:
+        raise HTTPException(400, "No se proporcionaron archivos")
+    if len(files) < 2:
+        raise HTTPException(400, "Se requieren al menos 2 documentos")
+
+    tmp_dir = tempfile.mkdtemp(prefix="onai_batch_")
+    file_infos: list[FileInfo] = []
+
+    for uploaded in files:
+        tmp_path = os.path.join(tmp_dir, uploaded.filename)
+        content = await uploaded.read()
+        Path(tmp_path).write_bytes(content)
+        file_infos.append(
+            FileInfo(
+                filename=uploaded.filename,
+                mime_type=uploaded.content_type or "application/pdf",
+                tmp_path=tmp_path,
+                size_bytes=len(content),
+            )
+        )
+
+    async def event_stream():
+        try:
+            initial_state: BatchState = {
+                "user_id": user_id,
+                "upload_samples": upload_samples,
+                "files": file_infos,
+                "classifications": [],
+                "type_groups": [],
+                "results": [],
+                "errors": [],
+                "current_step": "starting",
+                "progress_pct": 0,
+            }
+
+            config = {
+                "max_concurrency": settings.max_parallel_classifications,
+            }
+
+            # Stream intermediate states using astream
+            final_state = None
+            async for state_update in batch_graph.astream(initial_state, config=config):
+                # astream yields dicts keyed by node name
+                for node_name, node_output in state_update.items():
+                    step = node_output.get("current_step", node_name)
+                    pct = node_output.get("progress_pct", 0)
+
+                    step_labels = {
+                        "starting": "Iniciando procesamiento...",
+                        "validated": "Archivos validados",
+                        "classifying": f"Clasificando {len(file_infos)} documentos...",
+                        "classify_document": "Clasificando documento...",
+                        "homologated": "Homologando tipos de documento...",
+                        "process_type": "Procesando tipo de documento...",
+                        "completed": "Procesamiento completado",
+                        "aborted": "Procesamiento abortado",
+                    }
+
+                    msg = step_labels.get(step, f"Procesando: {step}")
+
+                    progress_data = {
+                        "step": step,
+                        "progress_pct": pct,
+                        "message": msg,
+                    }
+                    yield f"event: progress\ndata: {json.dumps(progress_data)}\n\n"
+
+                    final_state = {**initial_state, **node_output}
+
+            # Build final response
+            if final_state:
+                results = final_state.get("results", [])
+                errors = final_state.get("errors", [])
+
+                response_data = BatchProcessResponse(
+                    success=len(results) > 0,
+                    message=f"{len(results)} tipo(s) procesado(s) exitosamente",
+                    created_types=results,
+                    total_documents_processed=len(file_infos),
+                    total_types_created=sum(1 for r in results if hasattr(r, 'id') and r.id > 0),
+                    errors=errors,
+                )
+                yield f"event: complete\ndata: {response_data.model_dump_json()}\n\n"
+            else:
+                yield f'event: error\ndata: {{"error": "No se obtuvo resultado del pipeline"}}\n\n'
+
+        except Exception as e:
+            logger.error(f"Stream pipeline failed: {e}", exc_info=True)
+            yield f'event: error\ndata: {{"error": "{str(e)}"}}\n\n'
+
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/limits")
@@ -155,28 +275,13 @@ async def get_limits():
 
 
 def _estimate_time(n_docs: int) -> float:
-    """Estimate total processing time for n documents.
-
-    LLM calls per pipeline:
-      - classify: n calls (parallel in batches of max_parallel)
-      - homologate: 1 call
-      - consolidate: ~n_types calls (assume n/3 types)
-      - re-extract (uploadSamples): n calls
-
-    Total: n + 1 + n/3 + n = ~2.33n + 1 calls
-    Each call takes ~gemini_delay seconds
-    """
     delay = settings.gemini_delay_between_calls
     parallel = settings.max_parallel_classifications
     n_types = max(1, n_docs // 3)
 
-    # Classification: batched in parallel groups
     classify_time = (n_docs / parallel) * delay
-    # Homologation: 1 call
     homologate_time = delay
-    # Consolidation: 1 per type
     consolidate_time = n_types * delay
-    # Re-extraction: 1 per doc
     reextract_time = n_docs * delay
 
     return classify_time + homologate_time + consolidate_time + reextract_time

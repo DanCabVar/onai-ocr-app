@@ -1,6 +1,7 @@
 """Google Drive service for folder and file operations.
 
-Reuses the OAuth tokens stored by the NestJS backend in the database.
+Reuses the OAuth tokens stored by the NestJS backend in the google_tokens table.
+The NestJS backend handles OAuth flow; this service only reads existing tokens.
 """
 
 from __future__ import annotations
@@ -21,16 +22,27 @@ logger = logging.getLogger(__name__)
 
 
 async def _get_credentials() -> Credentials:
-    """Load OAuth credentials from the google_tokens table (shared with NestJS)."""
+    """Load OAuth credentials from the google_tokens table (shared with NestJS).
+
+    The google_tokens table schema (from NestJS GoogleToken entity):
+      id, access_token, refresh_token, expires_at (bigint ms), scope, token_type,
+      created_at, updated_at
+    """
     async with get_session() as session:
         result = await session.execute(
-            text("SELECT access_token, refresh_token, expiry FROM google_tokens LIMIT 1")
+            text(
+                "SELECT access_token, refresh_token, expires_at, scope, token_type "
+                "FROM google_tokens ORDER BY id DESC LIMIT 1"
+            )
         )
         row = result.mappings().first()
         if not row:
             raise RuntimeError(
-                "No Google OAuth tokens found. Authenticate via the NestJS backend first."
+                "No Google OAuth tokens found in DB. "
+                "Authenticate via the NestJS backend first (GET /api/google/auth)."
             )
+
+    logger.debug(f"Loaded Google token (expires_at: {row['expires_at']})")
 
     return Credentials(
         token=row["access_token"],
@@ -42,7 +54,7 @@ async def _get_credentials() -> Credentials:
 
 
 def _get_service(credentials: Credentials):
-    return build("drive", "v3", credentials=credentials)
+    return build("drive", "v3", credentials=credentials, cache_discovery=False)
 
 
 async def create_folder(name: str) -> dict:
@@ -87,7 +99,6 @@ async def get_public_url(file_id: str) -> str:
     creds = await _get_credentials()
     service = _get_service(creds)
 
-    # Set public permission
     service.permissions().create(
         fileId=file_id,
         body={"type": "anyone", "role": "reader"},

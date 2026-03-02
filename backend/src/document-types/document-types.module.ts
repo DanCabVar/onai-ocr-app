@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DocumentTypesService } from './document-types.service';
 import { DocumentTypeInferenceService } from './services/document-type-inference.service';
+import { ProcessorProxyService } from './services/processor-proxy.service';
 import { DocumentTypesController } from './document-types.controller';
 import { DocumentType } from '../database/entities/document-type.entity';
 import { Document } from '../database/entities/document.entity';
@@ -12,6 +14,10 @@ import { GeminiClassifierService } from '../ai-services/gemini-classifier.servic
 @Module({
   imports: [
     TypeOrmModule.forFeature([DocumentType, Document]),
+    HttpModule.register({
+      timeout: 15 * 60 * 1000, // 15 minutes for batch processing
+      maxRedirects: 3,
+    }),
     AuthModule,
     GoogleDriveModule,
   ],
@@ -19,9 +25,9 @@ import { GeminiClassifierService } from '../ai-services/gemini-classifier.servic
   providers: [
     DocumentTypesService,
     DocumentTypeInferenceService,
+    ProcessorProxyService,
     GeminiClassifierService,
   ],
   exports: [DocumentTypesService],
 })
 export class DocumentTypesModule {}
-

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Progress } from '@/components/ui/progress'
 import { useToast } from '@/hooks/use-toast'
-import { documentTypeInferenceService, CreatedDocumentType } from '@/app/services/document-type-inference.service'
+import { documentTypeInferenceService, CreatedDocumentType, ProgressEvent } from '@/app/services/document-type-inference.service'
 
 interface InferFromSamplesModalProps {
   isOpen: boolean
@@ -23,6 +23,7 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
   const [isDragging, setIsDragging] = useState(false)
   const [uploadSamples, setUploadSamples] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [progressMessage, setProgressMessage] = useState('')
   const [createdTypes, setCreatedTypes] = useState<CreatedDocumentType[]>([])
   const [errorMessage, setErrorMessage] = useState('')
 
@@ -143,18 +144,32 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
     }
 
     setState('processing')
-    setProgress(10)
+    setProgress(5)
+    setProgressMessage('Iniciando procesamiento...')
 
     try {
-      // Simular progreso mientras se procesa
+      // Use progress-aware method that tries SSE first, falls back to standard POST
       const progressInterval = setInterval(() => {
-        setProgress(prev => Math.min(prev + 5, 90))
-      }, 2000)
+        setProgress(prev => Math.min(prev + 2, 90))
+      }, 3000)
 
-      const result = await documentTypeInferenceService.inferFromSamples(files, uploadSamples)
+      const result = await documentTypeInferenceService.inferFromSamplesWithProgress(
+        files,
+        uploadSamples,
+        (event: ProgressEvent) => {
+          // Real-time progress from the processor
+          if (event.progress_pct > 0) {
+            setProgress(event.progress_pct)
+          }
+          if (event.message) {
+            setProgressMessage(event.message)
+          }
+        },
+      )
 
       clearInterval(progressInterval)
       setProgress(100)
+      setProgressMessage('Completado')
 
       setCreatedTypes(result.createdTypes)
       setState('success')
@@ -300,50 +315,72 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
               <div className="text-center">
                 <Loader2 className="h-16 w-16 mx-auto mb-4 text-primary animate-spin" />
                 <h3 className="text-lg font-semibold mb-2">Analizando documentos...</h3>
-                <p className="text-sm text-muted-foreground mb-6">
+                <p className="text-sm text-muted-foreground mb-2">
                   Esto puede tomar {getEstimatedTime(files.length)}. Por favor espera.
                 </p>
+                {progressMessage && (
+                  <p className="text-sm font-medium text-primary">{progressMessage}</p>
+                )}
               </div>
 
               <div className="space-y-3">
                 <Progress value={progress} className="h-2" />
+                <p className="text-xs text-muted-foreground text-center">{progress}%</p>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2">
-                    {progress >= 20 ? (
+                    {progress >= 10 ? (
                       <CheckCircle2 className="h-4 w-4 text-green-500" />
                     ) : (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     )}
-                    <span>Identificando tipos de documento...</span>
+                    <span>Validando archivos...</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {progress >= 50 ? (
+                    {progress >= 25 ? (
                       <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : progress >= 10 ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <div className="h-4 w-4" />
                     )}
-                    <span className={progress < 50 ? 'text-muted-foreground' : ''}>
-                      Extrayendo campos...
+                    <span className={progress < 10 ? 'text-muted-foreground' : ''}>
+                      Clasificando y extrayendo campos...
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {progress >= 40 ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : progress >= 25 ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <div className="h-4 w-4" />
+                    )}
+                    <span className={progress < 25 ? 'text-muted-foreground' : ''}>
+                      Homologando tipos de documento...
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
                     {progress >= 70 ? (
                       <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : progress >= 40 ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <div className="h-4 w-4" />
                     )}
-                    <span className={progress < 70 ? 'text-muted-foreground' : ''}>
-                      Consolidando schemas...
+                    <span className={progress < 40 ? 'text-muted-foreground' : ''}>
+                      Consolidando schemas y re-extrayendo...
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
                     {progress >= 90 ? (
                       <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : progress >= 70 ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <div className="h-4 w-4" />
                     )}
-                    <span className={progress < 90 ? 'text-muted-foreground' : ''}>
-                      Creando tipos de documento...
+                    <span className={progress < 70 ? 'text-muted-foreground' : ''}>
+                      Guardando en Drive y BD...
                     </span>
                   </div>
                 </div>
