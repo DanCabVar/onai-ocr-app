@@ -40,6 +40,15 @@ export interface InferredFieldsResult {
   }>;
 }
 
+/**
+ * Combined result: classify + extract in a single LLM call.
+ */
+export interface ClassifyAndExtractResult {
+  classification: ClassificationResult;
+  extraction: ExtractionResult | null;
+  inferredData: InferredFieldsResult | null;
+}
+
 @Injectable()
 export class GeminiClassifierService {
   private readonly logger = new Logger(GeminiClassifierService.name);
@@ -151,9 +160,119 @@ If confidence < ${threshold}, set isOthers=true. JSON only, no other text.`;
   }
 
   /**
+   * UNIFIED: Classify AND extract in a single Vision call.
+   * Saves ~30% LLM calls by combining two operations.
+   * Ported from Python processor pattern (classify_and_extract_fields).
+   *
+   * For known types: classifies against available types AND extracts fields per the matched schema.
+   * For unknown types: returns inferred type, summary, and key fields.
+   */
+  async classifyAndExtract(
+    fileBuffer: Buffer,
+    mimeType: string,
+    availableTypes: DocumentType[],
+  ): Promise<ClassifyAndExtractResult> {
+    const threshold =
+      this.configService.get<number>('CLASSIFICATION_CONFIDENCE_THRESHOLD') || 0.7;
+
+    // Build compact type descriptions with field schemas
+    const typesDesc = availableTypes
+      .map((t, i) => {
+        const fields = t.fieldSchema.fields
+          .map((f) => `${f.name}(${f.type}${f.required ? ',req' : ''})`)
+          .join(', ');
+        return `${i + 1}. "${t.name}" [id=${t.id}]: ${t.description || '-'} | ${fields}`;
+      })
+      .join('\n');
+
+    const prompt = `Eres un experto analista de documentos. Analiza esta imagen/PDF y haz TODO esto en UNA sola respuesta:
+
+1. CLASIFICA: ¿A cuál de estos tipos pertenece?
+${typesDesc}
+
+2. Si confidence >= ${threshold}: EXTRAE los campos del tipo coincidente usando su schema exacto.
+3. Si confidence < ${threshold} o no coincide: INFIERE tipo, resumen y campos clave (3-20).
+
+Responde SOLO con JSON:
+{
+  "matched_type_id": number|null,
+  "matched_type_name": "string",
+  "confidence": 0.0-1.0,
+  "is_others": boolean,
+  "inferred_type": "string (si is_others)",
+  "reasoning": "1 línea",
+  "summary": "resumen 1-2 líneas en español",
+  "fields": [
+    {"name":"snake_case","type":"string|number|date|boolean|array","label":"Etiqueta","required":bool,"description":"desc","value":"valor extraído"}
+  ]
+}
+
+IMPORTANTE:
+- Observa el layout visual completo (columnas, tablas, secciones)
+- Extrae valores reales junto a sus etiquetas
+- Fechas: YYYY-MM-DD, montos: solo número, null si no encontrado
+- Resumen siempre en español
+- JSON only, sin texto adicional.`;
+
+    return withRetry(
+      async () => {
+        await this.rateLimiter.acquire('gemini');
+
+        const base64Data = fileBuffer.toString('base64');
+        const result = await this.model.generateContent([
+          { inlineData: { data: base64Data, mimeType } },
+          { text: prompt },
+        ]);
+
+        const response = result.response.text();
+        const data = this.parseGeminiJSON(response);
+
+        const isOthers = data.is_others || data.confidence < threshold;
+        const fields = data.fields || [];
+
+        this.logger.log(
+          `✅ Classify+Extract: ${isOthers ? data.inferred_type : data.matched_type_name} ` +
+            `(${(data.confidence * 100).toFixed(0)}%, ${fields.length} campos)`,
+        );
+
+        const classification: ClassificationResult = {
+          documentTypeId: data.matched_type_id,
+          documentTypeName: data.matched_type_name || data.inferred_type || 'Desconocido',
+          confidence: data.confidence,
+          isOthers,
+          inferredType: data.inferred_type,
+          reasoning: data.reasoning,
+        };
+
+        if (isOthers) {
+          return {
+            classification,
+            extraction: null,
+            inferredData: {
+              inferred_type: data.inferred_type || 'Documento Sin Clasificar',
+              summary: data.summary || 'Sin resumen',
+              key_fields: fields,
+            },
+          };
+        }
+
+        return {
+          classification,
+          extraction: {
+            summary: data.summary || 'Sin resumen',
+            fields,
+          },
+          inferredData: null,
+        };
+      },
+      { maxRetries: 3, label: 'Gemini classify+extract' },
+    );
+  }
+
+  /**
    * Extract structured data using Vision (PDF/Image).
    * 
-   * OPTIMIZED: Compact prompt, same extraction quality.
+   * KEPT for backward compat / standalone extraction.
    */
   async extractDataWithVision(
     fileBuffer: Buffer,

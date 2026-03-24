@@ -144,34 +144,34 @@ export class DocumentProcessingService {
         );
       }
 
-      // ─── PASO 4: Classification with Gemini ───
-      const classifyMetric = this.metrics.startStage(ctx, 'classify');
-      const classification = await this.geminiClassifierService.classifyDocument(
-        ocrResult.text,
+      // ─── PASO 4+5: Unified classify + extract in a SINGLE Vision call ───
+      const classifyExtractMetric = this.metrics.startStage(ctx, 'classify-and-extract');
+      const unified = await this.geminiClassifierService.classifyAndExtract(
+        fileBuffer,
+        mimeType,
         availableTypes,
       );
-      this.metrics.endStage(classifyMetric, {
-        inputChars: Math.min(ocrResult.text.length, 3000) + 500, // prompt overhead
-        outputChars: 200,
+      this.metrics.endStage(classifyExtractMetric, {
+        isVision: true,
         provider: 'gemini',
       });
 
+      const classification = unified.classification;
       let documentType: DocumentType;
       let createdOthersFolder = false;
-      let inferredData: any = null;
+      let inferredData = unified.inferredData;
+      let extractedData: any;
 
       // ─── Resolve document type ───
       if (classification.isOthers) {
-        this.logger.log('Clasificado como "Otros" — infiriendo campos con Vision...');
+        this.logger.log('Clasificado como "Otros"');
         documentType = await this.getOrCreateOthersType(user);
         createdOthersFolder = !documentType.id;
 
-        const inferMetric = this.metrics.startStage(ctx, 'infer-fields-vision');
-        inferredData = await this.geminiClassifierService.inferFieldsForUnclassifiedWithVision(
-          fileBuffer,
-          mimeType,
-        );
-        this.metrics.endStage(inferMetric, { isVision: true, provider: 'gemini' });
+        extractedData = {
+          summary: inferredData?.summary || 'Sin resumen',
+          key_fields: inferredData?.key_fields || [],
+        };
       } else {
         // Match by name (case-insensitive, partial match fallback)
         const classifiedName = classification.documentTypeName.toLowerCase().trim();
@@ -193,35 +193,20 @@ export class DocumentProcessingService {
           documentType = await this.getOrCreateOthersType(user);
           classification.isOthers = true;
 
-          const inferMetric = this.metrics.startStage(ctx, 'infer-fields-vision-fallback');
-          inferredData = await this.geminiClassifierService.inferFieldsForUnclassifiedWithVision(
-            fileBuffer,
-            mimeType,
-          );
-          this.metrics.endStage(inferMetric, { isVision: true, provider: 'gemini' });
+          // Re-use unified fields as inferred data
+          inferredData = {
+            inferred_type: classification.inferredType || 'Documento Sin Clasificar',
+            summary: unified.extraction?.summary || 'Sin resumen',
+            key_fields: unified.extraction?.fields || [],
+          };
+          extractedData = {
+            summary: inferredData.summary,
+            key_fields: inferredData.key_fields,
+          };
         } else {
           this.logger.log(`✅ Clasificado: "${documentType.name}" (ID: ${documentType.id})`);
+          extractedData = unified.extraction || { summary: 'Sin resumen', fields: [] };
         }
-      }
-
-      // ─── PASO 5: Structured data extraction ───
-      const extractMetric = this.metrics.startStage(ctx, 'extract-data');
-      let extractedData: any;
-
-      if (classification.isOthers) {
-        extractedData = {
-          summary: inferredData?.summary || 'Sin resumen',
-          key_fields: inferredData?.key_fields || [],
-        };
-        this.metrics.endStage(extractMetric); // Already accounted for in infer step
-      } else {
-        // Use Vision for structured extraction
-        extractedData = await this.geminiClassifierService.extractDataWithVision(
-          fileBuffer,
-          mimeType,
-          documentType,
-        );
-        this.metrics.endStage(extractMetric, { isVision: true, provider: 'gemini' });
       }
 
       // ─── PASO 6: Save extracted JSON to R2 ───
