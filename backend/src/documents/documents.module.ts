@@ -8,7 +8,10 @@ import { Document } from '../database/entities/document.entity';
 import { DocumentType } from '../database/entities/document-type.entity';
 import { AuthModule } from '../auth/auth.module';
 import { AIServicesModule } from '../ai-services/ai-services.module';
-import { GoogleDriveModule } from '../google-drive/google-drive.module';
+import { StorageModule } from '../storage/storage.module';
+
+// NOTE: GoogleDriveModule disabled — R2 storage is now used.
+// import { GoogleDriveModule } from '../google-drive/google-drive.module';
 
 @Module({
   imports: [
@@ -16,11 +19,10 @@ import { GoogleDriveModule } from '../google-drive/google-drive.module';
     HttpModule,
     AuthModule,
     AIServicesModule,
-    GoogleDriveModule,
+    StorageModule,
   ],
   controllers: [DocumentsController],
   providers: [DocumentsService, DocumentProcessingService],
   exports: [DocumentsService, DocumentProcessingService],
 })
 export class DocumentsModule {}
-

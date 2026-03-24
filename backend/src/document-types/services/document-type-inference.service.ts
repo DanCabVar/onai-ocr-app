@@ -7,7 +7,9 @@ import { DocumentType } from '../../database/entities/document-type.entity';
 import { Document } from '../../database/entities/document.entity';
 import { User } from '../../database/entities/user.entity';
 import { GeminiClassifierService } from '../../ai-services/gemini-classifier.service';
-import { GoogleDriveService } from '../../google-drive/services/google-drive.service';
+import { StorageService } from '../../storage/storage.service';
+// NOTE: GoogleDriveService replaced by StorageService (R2).
+// import { GoogleDriveService } from '../../google-drive/services/google-drive.service';
 import {
   ProcessedDocument,
   DocumentTypeGroup,
@@ -29,7 +31,7 @@ export class DocumentTypeInferenceService {
     @InjectRepository(Document)
     private readonly documentRepository: Repository<Document>,
     private readonly geminiClassifierService: GeminiClassifierService,
-    private readonly googleDriveService: GoogleDriveService,
+    private readonly storageService: StorageService,
     private readonly configService: ConfigService,
   ) {
     const apiKey = this.configService.get<string>('GOOGLE_AI_API_KEY');
@@ -337,7 +339,7 @@ Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
   }
 
   /**
-   * MÉTODO 4: Crea tipos de documento en BD y Google Drive
+   * MÉTODO 4: Crea tipos de documento en BD y R2 storage
    * @param consolidatedTypes - Tipos consolidados del método anterior
    * @param user - Usuario que crea los tipos
    * @param uploadSamples - Si se deben subir los documentos de ejemplo a Drive
@@ -380,12 +382,8 @@ Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
           // Tipo nuevo: crear carpeta y tipo
           isNewType = true;
           
-          // 2. Crear carpeta en Google Drive
-          this.logger.log(`   📂 Creando carpeta en Google Drive...`);
-          const driveFolder = await this.googleDriveService.createFolder(
-            consolidated.typeName,
-          );
-          this.logger.log(`   ✅ Carpeta creada: ${driveFolder.id}`);
+          // R2 storage doesn't need folder creation — paths are virtual
+          this.logger.log(`   📂 R2: Using virtual folder path for "${consolidated.typeName}"`);
 
           // 3. Crear DocumentType en BD PRIMERO (para obtener el ID)
           this.logger.log(`   💾 Guardando tipo en base de datos...`);
@@ -406,8 +404,8 @@ Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
             fieldSchema: {
               fields: normalizedFields,
             },
-            googleDriveFolderId: driveFolder.id,
-            folderPath: driveFolder.webViewLink,
+            googleDriveFolderId: null, // R2 — no Drive folder
+            folderPath: null,
           });
 
           await this.documentTypeRepository.save(documentType);
@@ -420,16 +418,10 @@ Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
           
           for (const doc of consolidated.sampleDocuments) {
             try {
-              // Subir a Google Drive (usar el folderId del tipo, nuevo o existente)
-              const driveFile = await this.googleDriveService.uploadFile(
-                doc.buffer,
-                doc.filename, // Nombre original, sin prefijo [EJEMPLO]
-                doc.mimeType,
-                documentType.googleDriveFolderId,
-              );
-
-              // Obtener URL pública
-              const publicUrl = await this.googleDriveService.getPublicUrl(driveFile.id);
+              // Upload to R2 storage
+              const storageKey = this.storageService.buildKey(user.id, 'originals', doc.filename);
+              await this.storageService.uploadFile(doc.buffer, storageKey, doc.mimeType);
+              const publicUrl = await this.storageService.getPresignedUrl(storageKey, 7 * 24 * 3600);
 
               // Preparar extractedData en el formato esperado
               const extractedData = {
@@ -450,7 +442,9 @@ Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
                 documentTypeId: documentType.id, // Ahora sí existe el documentType
                 filename: doc.filename,
                 googleDriveLink: publicUrl,
-                googleDriveFileId: driveFile.id,
+                googleDriveFileId: null,
+                storageKey: storageKey,
+                storageProvider: 'r2',
                 ocrRawText: null, // No usamos OCR separado, Gemini Vision lo procesó
                 extractedData: extractedData,
                 inferredData: null, // No es un documento "Otros"
@@ -479,7 +473,7 @@ Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
               : `${documentType.description} (${consolidated.sampleDocuments.length} documentos agregados)`,
             fieldCount: consolidated.consolidatedFields.length,
             sampleDocumentCount: consolidated.sampleCount,
-            googleDriveFolderId: documentType.googleDriveFolderId,
+            googleDriveFolderId: documentType.googleDriveFolderId, // legacy — may be null for R2
             folderPath: documentType.folderPath,
             fields: consolidated.consolidatedFields,
           });
@@ -744,15 +738,10 @@ Responde SOLO con el JSON, sin texto adicional.`;
                   existingType,
                 );
 
-                // Subir a Google Drive
-                const driveFile = await this.googleDriveService.uploadFile(
-                  file.buffer,
-                  file.originalname,
-                  file.mimetype,
-                  existingType.googleDriveFolderId,
-                );
-
-                const publicUrl = await this.googleDriveService.getPublicUrl(driveFile.id);
+                // Upload to R2 storage
+                const storageKey = this.storageService.buildKey(user.id, 'originals', file.originalname);
+                await this.storageService.uploadFile(file.buffer, storageKey, file.mimetype);
+                const publicUrl = await this.storageService.getPresignedUrl(storageKey, 7 * 24 * 3600);
 
                 // Guardar en BD
                 const documentRecord = this.documentRepository.create({
@@ -760,7 +749,9 @@ Responde SOLO con el JSON, sin texto adicional.`;
                   documentTypeId: existingType.id,
                   filename: file.originalname,
                   googleDriveLink: publicUrl,
-                  googleDriveFileId: driveFile.id,
+                  googleDriveFileId: null,
+                  storageKey: storageKey,
+                  storageProvider: 'r2',
                   ocrRawText: null,
                   extractedData: extractedData,
                   inferredData: null,
@@ -782,7 +773,7 @@ Responde SOLO con el JSON, sin texto adicional.`;
               description: `${existingType.description} (${groupFiles.length} documentos agregados)`,
               fieldCount: existingType.fieldSchema.fields.length,
               sampleDocumentCount: groupFiles.length,
-              googleDriveFolderId: existingType.googleDriveFolderId,
+              googleDriveFolderId: existingType.googleDriveFolderId, // legacy — may be null for R2
               folderPath: existingType.folderPath,
               fields: existingType.fieldSchema.fields.map(f => ({ ...f, frequency: 1.0 })),
             });
@@ -858,11 +849,10 @@ Responde SOLO con el JSON, sin texto adicional.`;
           }
 
           // ============================================================
-          // Crear carpeta en Google Drive y tipo en BD
+          // Crear tipo en BD (R2 uses virtual folder paths)
           // ============================================================
-          this.logger.log(`   📂 Creando carpeta en Google Drive...`);
-          const driveFolder = await this.googleDriveService.createFolder(typeName);
-          this.logger.log(`   ✅ Carpeta creada: ${driveFolder.id}`);
+          // R2 storage uses virtual folder paths — no physical folder creation needed
+          this.logger.log(`   📂 R2: Using virtual folder for "${typeName}"`);
 
           this.logger.log(`   💾 Guardando tipo en base de datos...`);
           
@@ -882,8 +872,8 @@ Responde SOLO con el JSON, sin texto adicional.`;
             fieldSchema: {
               fields: normalizedFields,
             },
-            googleDriveFolderId: driveFolder.id,
-            folderPath: driveFolder.webViewLink,
+            googleDriveFolderId: null, // R2 — no Drive folder
+            folderPath: null,
           });
 
           await this.documentTypeRepository.save(documentType);
@@ -900,15 +890,10 @@ Responde SOLO con el JSON, sin texto adicional.`;
               const originalDoc = processedDocs[i];
 
               try {
-                // Subir a Google Drive
-                const driveFile = await this.googleDriveService.uploadFile(
-                  originalDoc.buffer,
-                  originalDoc.filename,
-                  originalDoc.mimeType,
-                  documentType.googleDriveFolderId,
-                );
-
-                const publicUrl = await this.googleDriveService.getPublicUrl(driveFile.id);
+                // Upload to R2 storage
+                const storageKey = this.storageService.buildKey(user.id, 'originals', originalDoc.filename);
+                await this.storageService.uploadFile(originalDoc.buffer, storageKey, originalDoc.mimeType);
+                const publicUrl = await this.storageService.getPresignedUrl(storageKey, 7 * 24 * 3600);
 
                 // Guardar en BD con datos RE-EXTRAÍDOS (schema unificado)
                 const documentRecord = this.documentRepository.create({
@@ -916,7 +901,9 @@ Responde SOLO con el JSON, sin texto adicional.`;
                   documentTypeId: documentType.id,
                   filename: originalDoc.filename,
                   googleDriveLink: publicUrl,
-                  googleDriveFileId: driveFile.id,
+                  googleDriveFileId: null,
+                  storageKey: storageKey,
+                  storageProvider: 'r2',
                   ocrRawText: null,
                   extractedData: reExtracted.extractedData, // ✅ Datos con schema unificado
                   inferredData: null,
@@ -941,7 +928,7 @@ Responde SOLO con el JSON, sin texto adicional.`;
             description: documentType.description,
             fieldCount: consolidated.consolidatedFields.length,
             sampleDocumentCount: processedDocs.length,
-            googleDriveFolderId: documentType.googleDriveFolderId,
+            googleDriveFolderId: documentType.googleDriveFolderId, // legacy — may be null for R2
             folderPath: documentType.folderPath,
             fields: consolidated.consolidatedFields,
           });

@@ -11,8 +11,9 @@ import { DocumentType } from '../database/entities/document-type.entity';
 import { User } from '../database/entities/user.entity';
 import { CreateDocumentTypeDto } from './dto/create-document-type.dto';
 import { UpdateDocumentTypeDto } from './dto/update-document-type.dto';
-import { GoogleDriveService } from '../google-drive/services/google-drive.service';
 import { DocumentProcessingService } from '../documents/services/document-processing.service';
+// NOTE: GoogleDriveService replaced by R2 storage. Folder creation no longer needed.
+// import { GoogleDriveService } from '../google-drive/services/google-drive.service';
 
 @Injectable()
 export class DocumentTypesService {
@@ -21,7 +22,6 @@ export class DocumentTypesService {
   constructor(
     @InjectRepository(DocumentType)
     private readonly documentTypeRepository: Repository<DocumentType>,
-    private readonly googleDriveService: GoogleDriveService,
     private readonly documentProcessingService: DocumentProcessingService,
   ) {}
 
@@ -37,35 +37,14 @@ export class DocumentTypesService {
       );
     }
 
-    // Crear carpeta en Google Drive
-    let googleDriveFolderId: string | null = null;
-    let folderPath: string | null = null;
-
-    try {
-      this.logger.log(`Creando carpeta en Google Drive: ${createDto.name}`);
-      const folder = await this.googleDriveService.createFolder(createDto.name);
-      
-      googleDriveFolderId = folder.id;
-      folderPath = folder.webViewLink;
-      
-      this.logger.log(
-        `Carpeta creada exitosamente: ${folder.name} (${folder.id})`,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `No se pudo crear la carpeta en Google Drive: ${error.message}`,
-      );
-      // Continuamos sin la carpeta, pero lo registramos
-    }
-
-    // Crear el tipo de documento
+    // Crear el tipo de documento (R2 handles storage, no Drive folder needed)
     const documentType = this.documentTypeRepository.create({
       name: createDto.name,
       description: createDto.description,
       fieldSchema: { fields: createDto.fields },
       userId: user.id,
-      googleDriveFolderId,
-      folderPath,
+      googleDriveFolderId: null,
+      folderPath: null,
     });
 
     await this.documentTypeRepository.save(documentType);
