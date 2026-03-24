@@ -88,7 +88,7 @@ export class ProcessorProxyService {
       );
 
       // Map snake_case response to camelCase expected by frontend
-      return (data.created_types || []).map((t) => ({
+      return (data.created_types || []).map((t: any) => ({
         id: t.id,
         name: t.name,
         description: t.description,
