@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import {
   FileText,
   Search,
@@ -84,6 +85,7 @@ function getStatusBadge(status: string) {
 }
 
 export default function DocumentsPage() {
+  const router = useRouter()
   const { toast } = useToast()
   const [documents, setDocuments] = useState<Document[]>([])
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([])
@@ -95,10 +97,12 @@ export default function DocumentsPage() {
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const [isUnauthenticated, setIsUnauthenticated] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true)
+      setIsUnauthenticated(false)
       const [docs, types] = await Promise.all([
         documentsService.getAll(),
         documentTypesService.getAll(),
@@ -107,11 +111,18 @@ export default function DocumentsPage() {
       setDocumentTypes(types)
     } catch (error: any) {
       console.error("Error loading documents:", error)
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los documentos",
-        variant: "destructive",
-      })
+      const status = error?.response?.status || error?.status
+      if (status === 401 || status === 403) {
+        setIsUnauthenticated(true)
+        setDocuments([])
+        setDocumentTypes([])
+      } else {
+        toast({
+          title: "Error",
+          description: "No se pudieron cargar los documentos",
+          variant: "destructive",
+        })
+      }
     } finally {
       setIsLoading(false)
     }
@@ -222,6 +233,25 @@ export default function DocumentsPage() {
             Gestiona y consulta todos los documentos procesados
           </p>
         </div>
+
+        {/* Unauthenticated Banner */}
+        {isUnauthenticated && (
+          <Card className="rounded-2xl border-dashed">
+            <CardContent className="p-6 text-center">
+              <FileText className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-50" />
+              <p className="text-sm font-medium text-muted-foreground">
+                Inicia sesión para ver tus documentos
+              </p>
+              <Button
+                variant="outline"
+                className="mt-3 rounded-full"
+                onClick={() => router.push("/login")}
+              >
+                Iniciar Sesión
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Mini Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
