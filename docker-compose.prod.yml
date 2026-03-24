@@ -1,0 +1,192 @@
+# =============================================
+# ONAI OCR - Production Docker Compose
+# Uses pre-built images from GHCR (no local build)
+# =============================================
+# Required: .env file with all secrets + IMAGE_TAG (default: latest)
+
+services:
+  # =====================================
+  # Traefik Reverse Proxy
+  # =====================================
+  traefik:
+    image: traefik:v3.2
+    container_name: onai-traefik
+    restart: always
+    command:
+      - "--api.dashboard=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+    networks:
+      - onai-network
+
+  # =====================================
+  # PostgreSQL Database
+  # =====================================
+  postgres:
+    image: postgres:14-alpine
+    container_name: onai-ocr-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-onai_ocr}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - onai-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =====================================
+  # Backend (NestJS) - GHCR Image
+  # =====================================
+  backend:
+    image: ${IMAGE_PREFIX:-ghcr.io/dancabvar/onai-ocr}-backend:${IMAGE_TAG:-latest}
+    container_name: onai-ocr-backend
+    restart: always
+    environment:
+      # Database
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DB_USER:-postgres}
+      - DATABASE_PASSWORD=${DB_PASSWORD}
+      - DATABASE_NAME=${DB_NAME:-onai_ocr}
+      # JWT
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRATION=${JWT_EXPIRATION:-7d}
+      # Server
+      - PORT=4000
+      - FRONTEND_URL=${FRONTEND_URL}
+      # Google Drive OAuth
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+      - GOOGLE_SCOPES=${GOOGLE_SCOPES:-https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/drive}
+      - GOOGLE_DRIVE_ROOT_FOLDER_ID=${GOOGLE_DRIVE_ROOT_FOLDER_ID}
+      # Google AI (Gemini)
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash-exp}
+      - CLASSIFICATION_CONFIDENCE_THRESHOLD=${CLASSIFICATION_CONFIDENCE_THRESHOLD:-0.7}
+      # Mistral AI (OCR)
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+      - MISTRAL_OCR_MODEL=${MISTRAL_OCR_MODEL:-mistral-ocr-latest}
+      - MISTRAL_VISION_MODEL=${MISTRAL_VISION_MODEL:-pixtral-12b-latest}
+      # Processor
+      - PROCESSOR_URL=http://processor:8000
+      # Optional
+      - OTHERS_FOLDER_NAME=${OTHERS_FOLDER_NAME:-Otros Documentos}
+      - OTHERS_FOLDER_DESCRIPTION=${OTHERS_FOLDER_DESCRIPTION:-Documentos sin clasificación automática}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - onai-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`${API_DOMAIN}`) || (Host(`${APP_DOMAIN}`) && PathPrefix(`/api`))"
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.backend.loadbalancer.server.port=4000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/api/google/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # =====================================
+  # Processor (Python/LangGraph) - GHCR Image
+  # =====================================
+  processor:
+    image: ${IMAGE_PREFIX:-ghcr.io/dancabvar/onai-ocr}-processor:${IMAGE_TAG:-latest}
+    container_name: onai-ocr-processor
+    restart: always
+    environment:
+      # Database
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DB_USER:-postgres}
+      - DATABASE_PASSWORD=${DB_PASSWORD}
+      - DATABASE_NAME=${DB_NAME:-onai_ocr}
+      # Google AI (Gemini)
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      # Google Drive OAuth
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+      - GOOGLE_DRIVE_ROOT_FOLDER_ID=${GOOGLE_DRIVE_ROOT_FOLDER_ID}
+      # Rate limiting
+      - GEMINI_RPM_LIMIT=${GEMINI_RPM_LIMIT:-10}
+      - GEMINI_DELAY_BETWEEN_CALLS=${GEMINI_DELAY_BETWEEN_CALLS:-6.5}
+      - MAX_BATCH_DOCUMENTS=${MAX_BATCH_DOCUMENTS:-10}
+      - MAX_PARALLEL_CLASSIFICATIONS=${MAX_PARALLEL_CLASSIFICATIONS:-3}
+      - MAX_PARALLEL_EXTRACTIONS=${MAX_PARALLEL_EXTRACTIONS:-2}
+      # Server
+      - PORT=8000
+      - DEBUG=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - onai-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # =====================================
+  # Frontend (Next.js) - GHCR Image
+  # =====================================
+  frontend:
+    image: ${IMAGE_PREFIX:-ghcr.io/dancabvar/onai-ocr}-frontend:${IMAGE_TAG:-latest}
+    container_name: onai-ocr-frontend
+    restart: always
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - onai-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`${APP_DOMAIN}`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+
+# =====================================
+# Volumes
+# =====================================
+volumes:
+  postgres_data:
+    driver: local
+  traefik_letsencrypt:
+    driver: local
+
+# =====================================
+# Networks
+# =====================================
+networks:
+  onai-network:
+    driver: bridge
