@@ -9,11 +9,8 @@ import { DocumentType } from '../database/entities/document-type.entity';
 import { Document } from '../database/entities/document.entity';
 import { AuthModule } from '../auth/auth.module';
 import { StorageModule } from '../storage/storage.module';
-import { GeminiClassifierService } from '../ai-services/gemini-classifier.service';
+import { AIServicesModule } from '../ai-services/ai-services.module';
 import { DocumentsModule } from '../documents/documents.module';
-
-// NOTE: GoogleDriveModule disabled — R2 storage is now used.
-// import { GoogleDriveModule } from '../google-drive/google-drive.module';
 
 @Module({
   imports: [
@@ -24,6 +21,7 @@ import { DocumentsModule } from '../documents/documents.module';
     }),
     AuthModule,
     StorageModule,
+    AIServicesModule, // Shared AI services (rate limiter, metrics, etc.)
     DocumentsModule,
   ],
   controllers: [DocumentTypesController],
@@ -31,7 +29,6 @@ import { DocumentsModule } from '../documents/documents.module';
     DocumentTypesService,
     DocumentTypeInferenceService,
     ProcessorProxyService,
-    GeminiClassifierService,
   ],
   exports: [DocumentTypesService],
 })
