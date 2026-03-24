@@ -661,7 +661,7 @@ export default function DashboardPage() {
                     <div className="rounded-lg bg-primary/10 p-2">
                       <HardDrive className="h-4 w-4 text-primary" />
                     </div>
-                    Explorar Google Drive
+                    Explorar Almacenamiento
                   </button>
                 </div>
               </CardContent>
