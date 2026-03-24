@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { User } from './user.entity';
 import { DocumentType } from './document-type.entity';
@@ -15,6 +16,7 @@ export class Document {
   @PrimaryGeneratedColumn()
   id: number;
 
+  @Index()
   @Column({ name: 'user_id' })
   userId: number;
 
@@ -42,9 +44,11 @@ export class Document {
   @Column({ name: 'confidence_score', type: 'decimal', precision: 5, scale: 2, nullable: true })
   confidenceScore: number;
 
+  @Index()
   @Column({ default: 'processing' })
   status: string;
 
+  @Index()
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

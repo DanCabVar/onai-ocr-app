@@ -19,6 +19,9 @@ export interface ProcessingResult {
 export class DocumentProcessingService {
   private readonly logger = new Logger(DocumentProcessingService.name);
 
+  private documentTypesCache: { data: DocumentType[]; timestamp: number } | null = null;
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
   constructor(
     @InjectRepository(Document)
     private readonly documentRepository: Repository<Document>,
@@ -28,6 +31,20 @@ export class DocumentProcessingService {
     private readonly geminiClassifierService: GeminiClassifierService,
     private readonly googleDriveService: GoogleDriveService,
   ) {}
+
+  private async getAvailableTypes(): Promise<DocumentType[]> {
+    const now = Date.now();
+    if (this.documentTypesCache && (now - this.documentTypesCache.timestamp) < this.CACHE_TTL) {
+      return this.documentTypesCache.data;
+    }
+    const types = await this.documentTypeRepository.find();
+    this.documentTypesCache = { data: types, timestamp: now };
+    return types;
+  }
+
+  public invalidateTypesCache(): void {
+    this.documentTypesCache = null;
+  }
 
   /**
    * Pipeline completo de procesamiento de documentos (NUEVO FLUJO CON URLS)
@@ -68,16 +85,13 @@ export class DocumentProcessingService {
       const publicUrl = await this.googleDriveService.getPublicUrl(processingFileId);
       this.logger.log(`✅ URL pública generada: ${publicUrl}`);
 
-      // PASO 3: Extracción de texto con OCR inteligente (OCR estándar + Vision fallback)
-      this.logger.log('Paso 3/7: Extracción de texto (OCR inteligente)...');
-      const ocrResult = await this.mistralOCRService.extractTextSmart(
-        publicUrl,
-        mimeType,
-      );
+      // PASO 3 & 4: Run OCR and load document types in parallel
+      this.logger.log('Paso 3/7: Extracción de texto (OCR inteligente) + carga de tipos...');
+      const [ocrResult, availableTypes] = await Promise.all([
+        this.mistralOCRService.extractTextSmart(publicUrl, mimeType),
+        this.getAvailableTypes(),
+      ]);
       this.logger.log(`✅ OCR completado: ${ocrResult.text.length} caracteres (método: ${ocrResult.metadata?.method || 'standard'})`);
-
-      // PASO 4: Obtener tipos de documento disponibles (compartidos entre todos los usuarios)
-      const availableTypes = await this.documentTypeRepository.find();
 
       if (availableTypes.length === 0) {
         throw new Error(

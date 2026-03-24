@@ -7,6 +7,7 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  Index,
 } from 'typeorm';
 import { User } from './user.entity';
 import { Document } from './document.entity';
@@ -28,6 +29,7 @@ export class DocumentType {
   @PrimaryGeneratedColumn()
   id: number;
 
+  @Index()
   @Column({ name: 'user_id' })
   userId: number;
 

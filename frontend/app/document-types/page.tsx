@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Plus, Edit, Trash2, FileText, Loader2, Sparkles } from "lucide-react"
+import { useState, useEffect, useMemo } from "react"
+import { Plus, Edit, Trash2, FileText, Loader2, Sparkles, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { documentTypesService, DocumentType, FieldDefinition } from "@/lib/api/document-types.service"
 import { DocumentTypeModal } from "@/components/document-type-modal"
@@ -26,6 +27,7 @@ export default function DocumentTypesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isInferModalOpen, setIsInferModalOpen] = useState(false)
   const [editingType, setEditingType] = useState<DocumentType | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
   const { toast } = useToast()
 
   // Cargar tipos de documento
@@ -53,6 +55,17 @@ export default function DocumentTypesPage() {
     loadDocumentTypes()
   }, [])
 
+  // Filter types by search
+  const filteredTypes = useMemo(() => {
+    if (!searchQuery.trim()) return documentTypes
+    const q = searchQuery.toLowerCase()
+    return documentTypes.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        (t.description && t.description.toLowerCase().includes(q))
+    )
+  }, [documentTypes, searchQuery])
+
   // Crear nuevo tipo
   const handleCreate = () => {
     setEditingType(null)
@@ -69,7 +82,7 @@ export default function DocumentTypesPage() {
   const handleDelete = async (type: DocumentType) => {
     // Construir mensaje de advertencia
     let warningMessage = `¿Está seguro de eliminar el tipo "${type.name}"?\n\n`;
-    
+
     if (type.googleDriveFolderId) {
       warningMessage += `⚠️ IMPORTANTE:\n`;
       warningMessage += `• Los datos en la base de datos serán eliminados\n`;
@@ -86,13 +99,13 @@ export default function DocumentTypesPage() {
 
     try {
       const response = await documentTypesService.delete(type.id)
-      
+
       // Mostrar mensaje de éxito con advertencia si existe
       toast({
         title: "Tipo eliminado",
         description: response.warning || `El tipo "${type.name}" ha sido eliminado exitosamente`,
       })
-      
+
       // Si el tipo eliminado era el seleccionado, limpiar selección
       if (selectedType?.id === type.id) {
         setSelectedType(null)
@@ -114,6 +127,11 @@ export default function DocumentTypesPage() {
     loadDocumentTypes()
   }
 
+  // Select a card
+  const handleCardClick = (type: DocumentType) => {
+    setSelectedType(type)
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -128,17 +146,17 @@ export default function DocumentTypesPage() {
       <div className="border-b p-6">
         <div className="flex justify-between items-center max-w-[2200px] mx-auto px-4">
           <div>
-            <h1 className="text-3xl font-bold">Tipos de Documento</h1>
-            <p className="text-muted-foreground mt-1">
-              Gestiona los tipos de documento y define qué campos extraer
+            <h1 className="text-3xl font-bold font-primary">Tipos de Documento</h1>
+            <p className="text-muted-foreground mt-1 font-secondary">
+              Gestiona los tipos de documento y define que campos extraer
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
-            <Button variant="outline" onClick={() => setIsInferModalOpen(true)}>
+            <Button variant="outline" className="rounded-full" onClick={() => setIsInferModalOpen(true)}>
               <Sparkles className="h-4 w-4 mr-2" />
-              Nuevo tipo a partir de documentos
+              Inferir desde Muestras
             </Button>
-            <Button onClick={handleCreate}>
+            <Button className="rounded-full" onClick={handleCreate}>
               <Plus className="h-4 w-4 mr-2" />
               Nuevo Tipo
             </Button>
@@ -147,177 +165,174 @@ export default function DocumentTypesPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden">
-        {documentTypes.length === 0 ? (
-          <div className="flex items-center justify-center h-full p-6">
-            <Card className="p-12 text-center max-w-md">
-              <FileText className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-              <h3 className="text-lg font-semibold mb-2">No hay tipos de documento</h3>
-              <p className="text-muted-foreground mb-4">
-                Crea tu primer tipo de documento para comenzar a procesar archivos
-              </p>
-              <Button onClick={handleCreate}>
-                <Plus className="h-4 w-4 mr-2" />
-                Crear Tipo de Documento
-              </Button>
-            </Card>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-6 p-6 max-w-[2200px] mx-auto">
-            {/* Panel Izquierdo: Lista de Tipos */}
-            <Card className="flex flex-col overflow-hidden h-fit max-h-[calc(100vh-200px)] min-w-0">
-              <div className="p-4 border-b">
-                <h2 className="text-lg font-semibold">Tipos de Documento</h2>
+      <div className="flex-1 overflow-auto p-6">
+        <div className="max-w-[2200px] mx-auto px-4">
+          {documentTypes.length === 0 ? (
+            <div className="flex items-center justify-center h-full p-6">
+              <Card className="p-12 text-center max-w-md rounded-2xl">
+                <FileText className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                <h3 className="text-lg font-semibold mb-2 font-primary">No hay tipos de documento</h3>
+                <p className="text-muted-foreground mb-4 font-secondary">
+                  Crea tu primer tipo de documento para comenzar a procesar archivos
+                </p>
+                <Button className="rounded-full" onClick={handleCreate}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Crear Tipo de Documento
+                </Button>
+              </Card>
+            </div>
+          ) : (
+            <>
+              {/* Search Bar */}
+              <div className="relative mb-6 max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar tipos de documento..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
               </div>
-              <div className="overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="px-6">Nombre</TableHead>
-                      <TableHead className="px-6">Descripción</TableHead>
-                      <TableHead className="w-[100px] text-center px-6">Campos</TableHead>
-                      <TableHead className="w-[100px] text-right px-6">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {documentTypes.map((type) => (
-                      <TableRow
-                        key={type.id}
-                        className={cn(
-                          "cursor-pointer transition-colors group",
-                          selectedType?.id === type.id 
-                            ? "bg-primary hover:bg-primary" 
-                            : "hover:bg-primary/90"
-                        )}
-                        onClick={() => setSelectedType(type)}
-                      >
-                        <TableCell className={cn(
-                          "font-medium py-4 px-6",
-                          selectedType?.id === type.id 
-                            ? "text-white" 
-                            : "group-hover:text-white"
-                        )}>
-                          {type.name}
-                        </TableCell>
-                        <TableCell className={cn(
-                          "py-4 px-6 whitespace-normal max-w-[300px]",
-                          selectedType?.id === type.id 
-                            ? "text-white/90" 
-                            : "text-muted-foreground group-hover:text-white/90"
-                        )}>
-                          {type.description || "Sin descripción"}
-                        </TableCell>
-                        <TableCell className="text-center py-4 px-6">
-                          <Badge 
-                            variant={selectedType?.id === type.id ? "default" : "secondary"}
-                            className={cn(
-                              selectedType?.id === type.id 
-                                ? "bg-white/20 text-white"
-                                : "group-hover:bg-white/20 group-hover:text-white"
-                            )}
-                          >
-                            {type.fieldSchema.fields.length}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right py-4 px-6">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className={cn(
-                                selectedType?.id === type.id 
-                                  ? "hover:bg-white/20 text-white"
-                                  : "group-hover:text-white hover:bg-white/20"
-                              )}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleEdit(type)
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className={cn(
-                                selectedType?.id === type.id 
-                                  ? "hover:bg-white/20"
-                                  : "hover:bg-white/20"
-                              )}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleDelete(type)
-                              }}
-                            >
-                              <Trash2 className={cn(
-                                "h-4 w-4",
-                                selectedType?.id === type.id 
-                                  ? "text-white" 
-                                  : "text-destructive group-hover:text-white"
-                              )} />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </Card>
 
-            {/* Panel Derecho: Campos del Tipo Seleccionado */}
-            <Card className="flex flex-col overflow-hidden h-fit max-h-[calc(100vh-200px)] min-w-0">
-              <div className="p-4 border-b">
-                <h2 className="text-lg font-semibold">
-                  {selectedType ? `Campos de: ${selectedType.name}` : "Selecciona un tipo"}
-                </h2>
+              {/* Card Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
+                {filteredTypes.map((type) => (
+                  <Card
+                    key={type.id}
+                    className={cn(
+                      "rounded-2xl cursor-pointer transition-all hover:shadow-md group",
+                      selectedType?.id === type.id
+                        ? "ring-2 ring-primary shadow-md"
+                        : "hover:ring-1 hover:ring-primary/30"
+                    )}
+                    onClick={() => handleCardClick(type)}
+                  >
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                            <FileText className="h-5 w-5 text-primary" />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="font-semibold font-primary text-sm truncate">{type.name}</h3>
+                          </div>
+                        </div>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleEdit(type)
+                            }}
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDelete(type)
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <p className="text-sm text-muted-foreground font-secondary line-clamp-2 mb-4 min-h-[2.5rem]">
+                        {type.description || "Sin descripcion"}
+                      </p>
+
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="text-xs font-secondary">
+                          {type.fieldSchema.fields.length} campos
+                        </Badge>
+                        {(type as any).documentCount !== undefined && (
+                          <Badge variant="outline" className="text-xs font-secondary">
+                            {(type as any).documentCount} documentos
+                          </Badge>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
-              <div className="overflow-auto">
-                {selectedType ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="px-6">Campo</TableHead>
-                        <TableHead className="px-6">Etiqueta</TableHead>
-                        <TableHead className="w-[120px] px-6">Tipo</TableHead>
-                        <TableHead className="w-[100px] text-center px-6">Requerido</TableHead>
-                        <TableHead className="px-6">Descripción</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedType.fieldSchema.fields.map((field, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-mono text-sm py-4 px-6">{field.name}</TableCell>
-                          <TableCell className="font-medium py-4 px-6">{field.label}</TableCell>
-                          <TableCell className="py-4 px-6">
-                            <Badge variant="outline">{field.type}</Badge>
-                          </TableCell>
-                          <TableCell className="text-center py-4 px-6">
-                            {field.required ? (
-                              <Badge variant="destructive">Sí</Badge>
-                            ) : (
-                              <Badge variant="secondary">No</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground text-sm py-4 px-6 whitespace-normal max-w-[350px]">
-                            {field.description || "-"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-muted-foreground">
-                    <div className="text-center">
-                      <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                      <p>Selecciona un tipo de documento para ver sus campos</p>
+
+              {filteredTypes.length === 0 && (
+                <div className="text-center py-12 text-muted-foreground font-secondary">
+                  <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No se encontraron tipos de documento que coincidan con tu busqueda.</p>
+                </div>
+              )}
+
+              {/* Selected Type Detail — Fields Table */}
+              {selectedType && (
+                <Card className="rounded-2xl">
+                  <div className="p-4 border-b flex items-center justify-between">
+                    <h2 className="text-lg font-semibold font-primary">
+                      Campos de: {selectedType.name}
+                    </h2>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-full"
+                        onClick={() => handleEdit(selectedType)}
+                      >
+                        <Edit className="h-3.5 w-3.5 mr-1.5" />
+                        Editar
+                      </Button>
                     </div>
                   </div>
-                )}
-              </div>
-            </Card>
-          </div>
-        )}
+                  <div className="overflow-auto">
+                    {selectedType.fieldSchema.fields.length > 0 ? (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="px-6">Campo</TableHead>
+                            <TableHead className="px-6">Etiqueta</TableHead>
+                            <TableHead className="w-[120px] px-6">Tipo</TableHead>
+                            <TableHead className="w-[100px] text-center px-6">Requerido</TableHead>
+                            <TableHead className="px-6">Descripcion</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {selectedType.fieldSchema.fields.map((field, index) => (
+                            <TableRow key={index}>
+                              <TableCell className="font-mono text-sm py-4 px-6">{field.name}</TableCell>
+                              <TableCell className="font-medium py-4 px-6">{field.label}</TableCell>
+                              <TableCell className="py-4 px-6">
+                                <Badge variant="outline">{field.type}</Badge>
+                              </TableCell>
+                              <TableCell className="text-center py-4 px-6">
+                                {field.required ? (
+                                  <Badge variant="destructive">Si</Badge>
+                                ) : (
+                                  <Badge variant="secondary">No</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground text-sm py-4 px-6 whitespace-normal max-w-[350px]">
+                                {field.description || "-"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <div className="p-8 text-center text-muted-foreground font-secondary">
+                        Este tipo de documento no tiene campos definidos.
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       <DocumentTypeModal

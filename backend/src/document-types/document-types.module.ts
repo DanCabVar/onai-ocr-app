@@ -10,6 +10,7 @@ import { Document } from '../database/entities/document.entity';
 import { AuthModule } from '../auth/auth.module';
 import { GoogleDriveModule } from '../google-drive/google-drive.module';
 import { GeminiClassifierService } from '../ai-services/gemini-classifier.service';
+import { DocumentsModule } from '../documents/documents.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { GeminiClassifierService } from '../ai-services/gemini-classifier.servic
     }),
     AuthModule,
     GoogleDriveModule,
+    DocumentsModule,
   ],
   controllers: [DocumentTypesController],
   providers: [

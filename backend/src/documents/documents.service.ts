@@ -91,6 +91,7 @@ export class DocumentsService {
 
   async getDocuments(user: User) {
     const documents = await this.documentRepository.find({
+      where: { userId: user.id },
       order: { createdAt: 'DESC' },
       relations: ['documentType'],
     });
@@ -113,7 +114,7 @@ export class DocumentsService {
 
   async getDocumentById(documentId: number, user: User) {
     const document = await this.documentRepository.findOne({
-      where: { id: documentId },
+      where: { id: documentId, userId: user.id },
       relations: ['documentType'],
     });
 
@@ -140,7 +141,7 @@ export class DocumentsService {
 
   async deleteDocument(documentId: number, user: User) {
     const document = await this.documentRepository.findOne({
-      where: { id: documentId },
+      where: { id: documentId, userId: user.id },
       relations: ['documentType'],
     });
 

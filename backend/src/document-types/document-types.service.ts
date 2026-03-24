@@ -12,6 +12,7 @@ import { User } from '../database/entities/user.entity';
 import { CreateDocumentTypeDto } from './dto/create-document-type.dto';
 import { UpdateDocumentTypeDto } from './dto/update-document-type.dto';
 import { GoogleDriveService } from '../google-drive/services/google-drive.service';
+import { DocumentProcessingService } from '../documents/services/document-processing.service';
 
 @Injectable()
 export class DocumentTypesService {
@@ -21,12 +22,13 @@ export class DocumentTypesService {
     @InjectRepository(DocumentType)
     private readonly documentTypeRepository: Repository<DocumentType>,
     private readonly googleDriveService: GoogleDriveService,
+    private readonly documentProcessingService: DocumentProcessingService,
   ) {}
 
   async create(createDto: CreateDocumentTypeDto, user: User) {
-    // Verificar si ya existe un tipo con ese nombre (compartido entre todos los usuarios)
+    // Verificar si ya existe un tipo con ese nombre para este usuario
     const existing = await this.documentTypeRepository.findOne({
-      where: { name: createDto.name },
+      where: { name: createDto.name, userId: user.id },
     });
 
     if (existing) {
@@ -67,6 +69,7 @@ export class DocumentTypesService {
     });
 
     await this.documentTypeRepository.save(documentType);
+    this.documentProcessingService.invalidateTypesCache();
 
     return {
       id: documentType.id,
@@ -82,6 +85,7 @@ export class DocumentTypesService {
 
   async findAll(user: User) {
     const documentTypes = await this.documentTypeRepository.find({
+      where: { userId: user.id },
       order: { createdAt: 'DESC' },
     });
 
@@ -99,7 +103,7 @@ export class DocumentTypesService {
 
   async findOne(id: number, user: User) {
     const documentType = await this.documentTypeRepository.findOne({
-      where: { id },
+      where: { id, userId: user.id },
     });
 
     if (!documentType) {
@@ -120,17 +124,17 @@ export class DocumentTypesService {
 
   async update(id: number, updateDto: UpdateDocumentTypeDto, user: User) {
     const documentType = await this.documentTypeRepository.findOne({
-      where: { id },
+      where: { id, userId: user.id },
     });
 
     if (!documentType) {
       throw new NotFoundException('Tipo de documento no encontrado');
     }
 
-    // Si se está cambiando el nombre, verificar que no exista otro con ese nombre
+    // Si se está cambiando el nombre, verificar que no exista otro con ese nombre para este usuario
     if (updateDto.name && updateDto.name !== documentType.name) {
       const existing = await this.documentTypeRepository.findOne({
-        where: { name: updateDto.name },
+        where: { name: updateDto.name, userId: user.id },
       });
 
       if (existing) {
@@ -148,6 +152,7 @@ export class DocumentTypesService {
       documentType.fieldSchema = { fields: updateDto.fields };
 
     await this.documentTypeRepository.save(documentType);
+    this.documentProcessingService.invalidateTypesCache();
 
     return {
       id: documentType.id,
@@ -161,7 +166,7 @@ export class DocumentTypesService {
 
   async remove(id: number, user: User) {
     const documentType = await this.documentTypeRepository.findOne({
-      where: { id },
+      where: { id, userId: user.id },
       relations: ['documents'],
     });
 
@@ -203,6 +208,7 @@ export class DocumentTypesService {
     }
 
     await this.documentTypeRepository.remove(documentType);
+    this.documentProcessingService.invalidateTypesCache();
 
     return {
       message: `Tipo de documento "${documentType.name}" eliminado exitosamente.`,

@@ -64,12 +64,13 @@ export class MistralOCRService {
         includeImageBase64: true, // camelCase según docs
       });
 
-      // 🔍 DEBUG: Ver estructura completa de la respuesta
-      this.logger.log('=== RESPUESTA COMPLETA DE MISTRAL OCR ===');
-      this.logger.log(`Tipo de respuesta: ${typeof response}`);
-      this.logger.log(`Propiedades disponibles: ${Object.keys(response).join(', ')}`);
-      this.logger.log(JSON.stringify(response, null, 2));
-      this.logger.log('=========================================');
+      if (process.env.NODE_ENV === 'development') {
+        this.logger.debug('=== RESPUESTA COMPLETA DE MISTRAL OCR ===');
+        this.logger.debug(`Tipo de respuesta: ${typeof response}`);
+        this.logger.debug(`Propiedades disponibles: ${Object.keys(response).join(', ')}`);
+        this.logger.debug(`Full response: ${JSON.stringify(response).substring(0, 500)}`);
+        this.logger.debug('=========================================');
+      }
 
       // Extraer el texto del response
       // Mistral OCR devuelve el texto en formato markdown dentro de cada página
