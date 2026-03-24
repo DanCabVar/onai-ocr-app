@@ -20,7 +20,6 @@ import { CreateDocumentTypeDto } from './dto/create-document-type.dto';
 import { UpdateDocumentTypeDto } from './dto/update-document-type.dto';
 import { InferFromSamplesResponseDto } from './dto/infer-from-samples.dto';
 import { DocumentTypeInferenceService } from './services/document-type-inference.service';
-import { ProcessorProxyService } from './services/processor-proxy.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../database/entities/user.entity';
@@ -33,7 +32,6 @@ export class DocumentTypesController {
   constructor(
     private readonly documentTypesService: DocumentTypesService,
     private readonly inferenceService: DocumentTypeInferenceService,
-    private readonly processorProxy: ProcessorProxyService,
   ) {}
 
   @Post()
@@ -122,25 +120,11 @@ export class DocumentTypesController {
     const shouldUploadSamples = uploadSamples === 'true';
 
     try {
-      // Try the Python/LangGraph processor first (optimised pipeline)
-      const processorAvailable = await this.processorProxy.isProcessorAvailable();
-
-      let createdTypes;
-      if (processorAvailable) {
-        this.logger.log('Using Python/LangGraph processor for batch inference');
-        createdTypes = await this.processorProxy.inferViaProcessor(
-          files,
-          user,
-          shouldUploadSamples,
-        );
-      } else {
-        this.logger.warn('Processor unavailable, falling back to inline inference');
-        createdTypes = await this.inferenceService.inferDocumentTypesFromSamples(
-          files,
-          user,
-          shouldUploadSamples,
-        );
-      }
+      const createdTypes = await this.inferenceService.inferDocumentTypesFromSamples(
+        files,
+        user,
+        shouldUploadSamples,
+      );
 
       return {
         success: true,
