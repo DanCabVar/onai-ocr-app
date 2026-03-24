@@ -8,6 +8,7 @@ import {
 import { authService } from "@/lib/api/auth.service";
 import Link from "next/link";
 import { useState } from "react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const mainNavItems = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -78,6 +79,12 @@ export function AppSidebar() {
           </Link>
         ))}
       </nav>
+
+      {/* Theme Toggle */}
+      <div className="px-8 pb-2 flex items-center gap-2 text-sm text-[hsl(var(--sidebar-foreground))]">
+        <ThemeToggle />
+        <span className="font-secondary">Cambiar tema</span>
+      </div>
 
       {/* User Footer */}
       <div className="border-t border-[hsl(var(--sidebar-border))] px-8 py-6">

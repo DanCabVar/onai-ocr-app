@@ -45,8 +45,22 @@ export default function ProfilePage() {
 
   if (!user) {
     return (
-      <div className="container mx-auto p-6">
-        <p>Cargando...</p>
+      <div className="container mx-auto p-6 max-w-6xl">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold font-primary">Mi Perfil</h1>
+        </div>
+        <Card className="rounded-2xl">
+          <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
+            <User className="h-12 w-12 text-muted-foreground" />
+            <p className="text-lg font-medium font-primary">Sesión no disponible</p>
+            <p className="text-sm text-muted-foreground font-secondary text-center max-w-md">
+              No se encontraron datos de usuario. Inicia sesión para ver tu perfil.
+            </p>
+            <Button className="rounded-full mt-2" onClick={() => window.location.href = "/login"}>
+              Iniciar Sesión
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
