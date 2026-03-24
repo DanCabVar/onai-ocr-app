@@ -303,53 +303,99 @@ export class DocumentProcessingService {
   /**
    * Get or create the "Otros Documentos" catch-all type.
    */
+  /**
+   * Atomic get-or-create for the "Otros Documentos" type.
+   * Uses advisory lock via pg_advisory_xact_lock to prevent duplicates
+   * under concurrent requests.
+   */
   private async getOrCreateOthersType(user: User): Promise<DocumentType> {
     const othersName = process.env.OTHERS_FOLDER_NAME || 'Otros Documentos';
 
-    let othersType = await this.documentTypeRepository.findOne({
+    // Fast path: already exists
+    const existing = await this.documentTypeRepository.findOne({
       where: { name: othersName },
     });
+    if (existing) return existing;
 
-    if (othersType) return othersType;
+    // Slow path: acquire advisory lock and double-check
+    const queryRunner =
+      this.documentTypeRepository.manager.connection.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    othersType = this.documentTypeRepository.create({
-      userId: user.id,
-      name: othersName,
-      description:
-        process.env.OTHERS_FOLDER_DESCRIPTION ||
-        'Documentos sin clasificación automática. La IA identifica el tipo y campos clave.',
-      fieldSchema: {
-        fields: [
-          {
-            name: 'document_title',
-            type: 'string',
-            label: 'Título del Documento',
-            required: false,
-            description: 'Tipo o título identificado por IA',
-          },
-          {
-            name: 'document_category',
-            type: 'string',
-            label: 'Categoría',
-            required: false,
-            description: 'Categoría general del documento',
-          },
-          {
-            name: 'key_entities',
-            type: 'string',
-            label: 'Resumen/Entidades Clave',
-            required: false,
-            description: 'Resumen o entidades principales',
-          },
-        ],
-      },
-      googleDriveFolderId: null,
-      folderPath: null,
-    });
+    try {
+      // Advisory lock keyed on a fixed hash to serialize "Otros" creation
+      // 0x4F54524F53 = "OTROS" in hex, truncated to 32-bit int
+      await queryRunner.query('SELECT pg_advisory_xact_lock(1330857043)');
 
-    await this.documentTypeRepository.save(othersType);
-    this.logger.log('✅ Tipo "Otros Documentos" creado');
+      // Double-check inside the lock
+      const locked = await queryRunner.manager.findOne(DocumentType, {
+        where: { name: othersName },
+      });
+      if (locked) {
+        await queryRunner.commitTransaction();
+        return locked;
+      }
 
-    return othersType;
+      const storagePrefix = 'types/otros-documentos/';
+
+      const othersType = queryRunner.manager.create(DocumentType, {
+        userId: user.id,
+        name: othersName,
+        description:
+          process.env.OTHERS_FOLDER_DESCRIPTION ||
+          'Documentos sin clasificación automática. La IA identifica el tipo y campos clave.',
+        fieldSchema: {
+          fields: [
+            {
+              name: 'document_title',
+              type: 'string',
+              label: 'Título del Documento',
+              required: false,
+              description: 'Tipo o título identificado por IA',
+            },
+            {
+              name: 'document_category',
+              type: 'string',
+              label: 'Categoría',
+              required: false,
+              description: 'Categoría general del documento',
+            },
+            {
+              name: 'key_entities',
+              type: 'string',
+              label: 'Resumen/Entidades Clave',
+              required: false,
+              description: 'Resumen o entidades principales',
+            },
+          ],
+        },
+        storagePrefix,
+        googleDriveFolderId: null,
+        folderPath: null,
+      });
+
+      await queryRunner.manager.save(othersType);
+      await queryRunner.commitTransaction();
+
+      this.logger.log('✅ Tipo "Otros Documentos" creado (con lock)');
+      return othersType;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      this.logger.error(
+        `Error en getOrCreateOthersType: ${error.message}`,
+        error.stack,
+      );
+
+      // Final fallback: maybe another transaction created it
+      const fallback = await this.documentTypeRepository.findOne({
+        where: { name: othersName },
+      });
+      if (fallback) return fallback;
+
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 }
