@@ -8,9 +8,12 @@ import { DocumentTypesController } from './document-types.controller';
 import { DocumentType } from '../database/entities/document-type.entity';
 import { Document } from '../database/entities/document.entity';
 import { AuthModule } from '../auth/auth.module';
-import { GoogleDriveModule } from '../google-drive/google-drive.module';
+import { StorageModule } from '../storage/storage.module';
 import { GeminiClassifierService } from '../ai-services/gemini-classifier.service';
 import { DocumentsModule } from '../documents/documents.module';
+
+// NOTE: GoogleDriveModule disabled — R2 storage is now used.
+// import { GoogleDriveModule } from '../google-drive/google-drive.module';
 
 @Module({
   imports: [
@@ -20,7 +23,7 @@ import { DocumentsModule } from '../documents/documents.module';
       maxRedirects: 3,
     }),
     AuthModule,
-    GoogleDriveModule,
+    StorageModule,
     DocumentsModule,
   ],
   controllers: [DocumentTypesController],

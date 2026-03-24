@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { Document } from '../database/entities/document.entity';
 import { User } from '../database/entities/user.entity';
 import { DocumentProcessingService } from './services/document-processing.service';
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class DocumentsService {
@@ -20,6 +21,7 @@ export class DocumentsService {
     private readonly documentRepository: Repository<Document>,
     private readonly configService: ConfigService,
     private readonly documentProcessingService: DocumentProcessingService,
+    private readonly storageService: StorageService,
   ) {}
 
   async uploadFile(file: Express.Multer.File, user: User) {
@@ -74,8 +76,8 @@ export class DocumentsService {
           id: result.document.id,
           filename: result.document.filename,
           documentTypeId: result.document.documentTypeId,
-          googleDriveFileId: result.document.googleDriveFileId,
-          googleDriveLink: result.document.googleDriveLink,
+          storageKey: result.document.storageKey,
+          storageProvider: result.document.storageProvider,
           extractedData: result.document.extractedData,
           confidenceScore: result.document.confidenceScore,
           createdAt: result.document.createdAt,
@@ -96,20 +98,40 @@ export class DocumentsService {
       relations: ['documentType'],
     });
 
-    return documents.map((doc) => ({
-      id: doc.id,
-      filename: doc.filename,
-      documentTypeId: doc.documentTypeId,
-      documentTypeName: doc.documentType?.name || null,
-      googleDriveLink: doc.googleDriveLink,
-      googleDriveFileId: doc.googleDriveFileId,
-      extractedData: doc.extractedData,
-      inferredData: doc.inferredData, // Para documentos "Otros"
-      confidenceScore: doc.confidenceScore,
-      status: doc.status,
-      createdAt: doc.createdAt,
-      updatedAt: doc.updatedAt,
-    }));
+    // Generate fresh presigned URLs for R2-stored docs
+    const results = await Promise.all(
+      documents.map(async (doc) => {
+        let fileUrl = doc.googleDriveLink; // legacy fallback
+
+        if (doc.storageProvider === 'r2' && doc.storageKey) {
+          try {
+            fileUrl = await this.storageService.getPresignedUrl(doc.storageKey, 3600);
+          } catch {
+            fileUrl = null;
+          }
+        }
+
+        return {
+          id: doc.id,
+          filename: doc.filename,
+          documentTypeId: doc.documentTypeId,
+          documentTypeName: doc.documentType?.name || null,
+          fileUrl,
+          storageProvider: doc.storageProvider || 'google_drive',
+          extractedData: doc.extractedData,
+          inferredData: doc.inferredData,
+          confidenceScore: doc.confidenceScore,
+          status: doc.status,
+          createdAt: doc.createdAt,
+          updatedAt: doc.updatedAt,
+          // Legacy fields (deprecated)
+          googleDriveLink: doc.googleDriveLink,
+          googleDriveFileId: doc.googleDriveFileId,
+        };
+      }),
+    );
+
+    return results;
   }
 
   async getDocumentById(documentId: number, user: User) {
@@ -122,13 +144,24 @@ export class DocumentsService {
       throw new NotFoundException('Documento no encontrado');
     }
 
+    // Generate fresh presigned URL for R2-stored docs
+    let fileUrl = document.googleDriveLink;
+    if (document.storageProvider === 'r2' && document.storageKey) {
+      try {
+        fileUrl = await this.storageService.getPresignedUrl(document.storageKey, 3600);
+      } catch {
+        fileUrl = null;
+      }
+    }
+
     return {
       id: document.id,
       filename: document.filename,
       documentTypeId: document.documentTypeId,
       documentTypeName: document.documentType?.name || null,
-      googleDriveLink: document.googleDriveLink,
-      googleDriveFileId: document.googleDriveFileId,
+      fileUrl,
+      storageProvider: document.storageProvider || 'google_drive',
+      storageKey: document.storageKey,
       extractedData: document.extractedData,
       inferredData: document.inferredData,
       ocrRawText: document.ocrRawText,
@@ -136,6 +169,9 @@ export class DocumentsService {
       status: document.status,
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
+      // Legacy fields (deprecated)
+      googleDriveLink: document.googleDriveLink,
+      googleDriveFileId: document.googleDriveFileId,
     };
   }
 
@@ -151,22 +187,69 @@ export class DocumentsService {
 
     this.logger.log(`Eliminando documento ${documentId} (${document.filename}) de usuario ${user.id}`);
 
+    // Delete from R2 if stored there
+    if (document.storageProvider === 'r2' && document.storageKey) {
+      try {
+        await this.storageService.deleteFile(document.storageKey);
+        this.logger.log(`✅ Archivo eliminado de R2: ${document.storageKey}`);
+
+        // Also try to delete extracted JSON
+        const extractedPrefix = `${user.id}/extracted/`;
+        const extractedFiles = await this.storageService.listUserFiles(user.id, 'extracted');
+        // Best effort — delete matching extracted files
+        for (const ef of extractedFiles) {
+          if (ef.filename?.includes(document.filename.replace(/\.[^.]+$/, ''))) {
+            await this.storageService.deleteFile(ef.key).catch(() => {});
+          }
+        }
+      } catch (error) {
+        this.logger.error(`Error eliminando de R2: ${error.message}`);
+      }
+    }
+
     // Eliminar de la base de datos
     await this.documentRepository.remove(document);
-
     this.logger.log(`✅ Documento eliminado de BD: ${document.filename}`);
 
     return {
       success: true,
-      message: 'Documento eliminado exitosamente de la base de datos',
-      warning: 'NOTA: El archivo en Google Drive NO ha sido eliminado por seguridad. Puedes eliminarlo manualmente si lo deseas.',
+      message: 'Documento eliminado exitosamente',
       document: {
         id: document.id,
         filename: document.filename,
-        googleDriveFileId: document.googleDriveFileId,
-        googleDriveLink: document.googleDriveLink,
+        storageKey: document.storageKey,
+        storageProvider: document.storageProvider,
       },
     };
   }
-}
 
+  /**
+   * List all files for a user in R2 storage.
+   */
+  async listUserFiles(user: User) {
+    return this.storageService.listUserFiles(user.id);
+  }
+
+  /**
+   * Get a presigned download URL for a document.
+   */
+  async getDownloadUrl(documentId: number, user: User): Promise<string> {
+    const document = await this.documentRepository.findOne({
+      where: { id: documentId, userId: user.id },
+    });
+
+    if (!document) {
+      throw new NotFoundException('Documento no encontrado');
+    }
+
+    if (document.storageProvider !== 'r2' || !document.storageKey) {
+      // Fallback to legacy Google Drive link
+      if (document.googleDriveLink) {
+        return document.googleDriveLink;
+      }
+      throw new BadRequestException('Documento no tiene archivo en R2 ni Google Drive');
+    }
+
+    return this.storageService.getPresignedUrl(document.storageKey, 3600);
+  }
+}

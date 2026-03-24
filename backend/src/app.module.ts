@@ -5,11 +5,15 @@ import { AuthModule } from './auth/auth.module';
 import { DocumentsModule } from './documents/documents.module';
 import { ChatModule } from './chat/chat.module';
 import { DocumentTypesModule } from './document-types/document-types.module';
-import { GoogleDriveModule } from './google-drive/google-drive.module';
+import { StorageModule } from './storage/storage.module';
 import { User } from './database/entities/user.entity';
 import { Document } from './database/entities/document.entity';
 import { DocumentType } from './database/entities/document-type.entity';
 import { GoogleToken } from './database/entities/google-token.entity';
+
+// NOTE: GoogleDriveModule disabled — R2 storage is now the primary provider.
+// The google-drive/ directory is kept for reference but not imported.
+// import { GoogleDriveModule } from './google-drive/google-drive.module';
 
 @Module({
   imports: [
@@ -38,11 +42,11 @@ import { GoogleToken } from './database/entities/google-token.entity';
 
     // Módulos de la aplicación
     AuthModule,
-    GoogleDriveModule,
+    StorageModule,
+    // GoogleDriveModule, // DISABLED — replaced by StorageModule (R2)
     DocumentTypesModule,
     DocumentsModule,
     ChatModule,
   ],
 })
 export class AppModule {}
-

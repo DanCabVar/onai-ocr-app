@@ -32,6 +32,14 @@ export class Document {
   @Column({ name: 'google_drive_file_id', nullable: true })
   googleDriveFileId: string;
 
+  /** R2 object key — e.g. {user_id}/originals/{filename} */
+  @Column({ name: 'storage_key', type: 'text', nullable: true })
+  storageKey: string;
+
+  /** 'r2' | 'google_drive' — indicates where the file lives */
+  @Column({ name: 'storage_provider', type: 'varchar', length: 20, nullable: true, default: 'r2' })
+  storageProvider: string;
+
   @Column({ name: 'extracted_data', type: 'jsonb', nullable: true })
   extractedData: Record<string, any>;
 

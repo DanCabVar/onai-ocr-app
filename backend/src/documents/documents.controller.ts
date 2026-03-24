@@ -40,12 +40,26 @@ export class DocumentsController {
     return this.documentsService.getDocuments(user);
   }
 
+  @Get('files')
+  async listUserFiles(@CurrentUser() user: User) {
+    return this.documentsService.listUserFiles(user);
+  }
+
   @Get(':id')
   async getDocumentById(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: User,
   ) {
     return this.documentsService.getDocumentById(id, user);
+  }
+
+  @Get(':id/download-url')
+  async getDownloadUrl(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
+    const url = await this.documentsService.getDownloadUrl(id, user);
+    return { url };
   }
 
   @Delete(':id')
@@ -56,4 +70,3 @@ export class DocumentsController {
     return this.documentsService.deleteDocument(id, user);
   }
 }
-

@@ -1,12 +1,15 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Document } from '../../database/entities/document.entity';
 import { DocumentType } from '../../database/entities/document-type.entity';
 import { MistralOCRService } from '../../ai-services/mistral-ocr.service';
 import { GeminiClassifierService } from '../../ai-services/gemini-classifier.service';
-import { GoogleDriveService } from '../../google-drive/services/google-drive.service';
+import { StorageService } from '../../storage/storage.service';
 import { User } from '../../database/entities/user.entity';
+
+// NOTE: GoogleDriveService import removed — module disabled but not deleted.
+// import { GoogleDriveService } from '../../google-drive/services/google-drive.service';
 
 export interface ProcessingResult {
   document: Document;
@@ -29,7 +32,7 @@ export class DocumentProcessingService {
     private readonly documentTypeRepository: Repository<DocumentType>,
     private readonly mistralOCRService: MistralOCRService,
     private readonly geminiClassifierService: GeminiClassifierService,
-    private readonly googleDriveService: GoogleDriveService,
+    private readonly storageService: StorageService,
   ) {}
 
   private async getAvailableTypes(): Promise<DocumentType[]> {
@@ -47,15 +50,14 @@ export class DocumentProcessingService {
   }
 
   /**
-   * Pipeline completo de procesamiento de documentos (NUEVO FLUJO CON URLS)
-   * 1. Subir a carpeta "Processing" (temporal)
-   * 2. Obtener URL pública del archivo
-   * 3. OCR con Mistral (usando URL)
+   * Pipeline completo de procesamiento de documentos (R2 Storage)
+   * 1. Subir original a R2 ({user_id}/originals/{filename})
+   * 2. Generar presigned URL para OCR
+   * 3. OCR con Mistral (usando presigned URL)
    * 4. Clasificación con Gemini
    * 5. Extracción de datos con Gemini
-   * 6. Mover archivo a carpeta del tipo clasificado
-   * 7. Eliminar de carpeta "Processing"
-   * 8. Guardar en Base de Datos
+   * 6. Guardar extracted data como JSON en R2
+   * 7. Guardar en Base de Datos
    */
   async processDocument(
     fileBuffer: Buffer,
@@ -65,33 +67,31 @@ export class DocumentProcessingService {
   ): Promise<ProcessingResult> {
     this.logger.log(`Iniciando procesamiento de documento: ${originalName}`);
 
-    let processingFileId: string | null = null;
+    // Build storage key for the original file
+    const originalKey = this.storageService.buildKey(user.id, 'originals', originalName);
+    let uploaded = false;
 
     try {
-      // PASO 1: Subir a carpeta temporal "Processing"
-      this.logger.log('Paso 1/7: Subiendo a carpeta temporal "Processing"...');
-      const processingFolderId = await this.googleDriveService.getOrCreateProcessingFolder();
-      const processingFile = await this.googleDriveService.uploadFile(
-        fileBuffer,
-        originalName,
-        mimeType,
-        processingFolderId,
-      );
-      processingFileId = processingFile.id;
-      this.logger.log(`✅ Archivo subido a Processing: ${processingFileId}`);
+      // PASO 1: Subir a R2
+      this.logger.log('Paso 1/6: Subiendo archivo a R2...');
+      await this.storageService.uploadFile(fileBuffer, originalKey, mimeType);
+      uploaded = true;
+      this.logger.log(`✅ Archivo subido a R2: ${originalKey}`);
 
-      // PASO 2: Obtener URL pública del archivo
-      this.logger.log('Paso 2/7: Generando URL pública...');
-      const publicUrl = await this.googleDriveService.getPublicUrl(processingFileId);
-      this.logger.log(`✅ URL pública generada: ${publicUrl}`);
+      // PASO 2: Generar presigned URL para que Mistral pueda leer el archivo
+      this.logger.log('Paso 2/6: Generando presigned URL...');
+      const presignedUrl = await this.storageService.getPresignedUrl(originalKey, 600); // 10 min
+      this.logger.log('✅ Presigned URL generada');
 
       // PASO 3 & 4: Run OCR and load document types in parallel
-      this.logger.log('Paso 3/7: Extracción de texto (OCR inteligente) + carga de tipos...');
+      this.logger.log('Paso 3/6: Extracción de texto (OCR) + carga de tipos...');
       const [ocrResult, availableTypes] = await Promise.all([
-        this.mistralOCRService.extractTextSmart(publicUrl, mimeType),
+        this.mistralOCRService.extractTextSmart(presignedUrl, mimeType),
         this.getAvailableTypes(),
       ]);
-      this.logger.log(`✅ OCR completado: ${ocrResult.text.length} caracteres (método: ${ocrResult.metadata?.method || 'standard'})`);
+      this.logger.log(
+        `✅ OCR completado: ${ocrResult.text.length} caracteres (método: ${ocrResult.metadata?.method || 'standard'})`,
+      );
 
       if (availableTypes.length === 0) {
         throw new Error(
@@ -99,8 +99,8 @@ export class DocumentProcessingService {
         );
       }
 
-      // PASO 5: Clasificación con Gemini
-      this.logger.log('Paso 4/7: Clasificación del documento...');
+      // PASO 4: Clasificación con Gemini
+      this.logger.log('Paso 4/6: Clasificación del documento...');
       const classification = await this.geminiClassifierService.classifyDocument(
         ocrResult.text,
         availableTypes,
@@ -110,13 +110,11 @@ export class DocumentProcessingService {
       let createdOthersFolder = false;
       let inferredData: any = null;
 
-      // PASO 6: Determinar o crear tipo de documento
+      // Determinar o crear tipo de documento
       if (classification.isOthers) {
-        this.logger.log(
-          'Documento clasificado como "Otros". Buscando/creando carpeta "Otros"...',
-        );
-        documentType = await this.getOrCreateOthersFolder(user);
-        createdOthersFolder = !documentType.id; // Si no tenía ID, se acaba de crear
+        this.logger.log('Documento clasificado como "Otros". Buscando/creando tipo "Otros"...');
+        documentType = await this.getOrCreateOthersType(user);
+        createdOthersFolder = !documentType.id;
 
         // Inferir campos clave para documentos "Otros" usando VISIÓN
         this.logger.log('🔍 Infiriendo campos clave con Gemini Vision...');
@@ -127,7 +125,7 @@ export class DocumentProcessingService {
       } else {
         // BUSCAR POR NOMBRE en lugar de por ID (más resiliente)
         const classifiedTypeName = classification.documentTypeName.toLowerCase().trim();
-        
+
         // Intentar coincidencia exacta primero
         documentType = availableTypes.find(
           (t) => t.name.toLowerCase().trim() === classifiedTypeName,
@@ -138,10 +136,9 @@ export class DocumentProcessingService {
           this.logger.warn(
             `No se encontró coincidencia exacta para "${classification.documentTypeName}". Buscando similitud...`,
           );
-          
+
           documentType = availableTypes.find((t) => {
             const typeName = t.name.toLowerCase().trim();
-            // Coincidencia parcial: uno contiene al otro
             return typeName.includes(classifiedTypeName) || classifiedTypeName.includes(typeName);
           });
         }
@@ -151,15 +148,13 @@ export class DocumentProcessingService {
           this.logger.warn(
             `No se encontró tipo de documento para "${classification.documentTypeName}". Clasificando como "Otros"...`,
           );
-          documentType = await this.getOrCreateOthersFolder(user);
-          
-          // Inferir campos para este documento "Otros"
+          documentType = await this.getOrCreateOthersType(user);
+
           inferredData = await this.geminiClassifierService.inferFieldsForUnclassifiedWithVision(
             fileBuffer,
             mimeType,
           );
-          
-          // Actualizar la clasificación
+
           classification.isOthers = true;
         } else {
           this.logger.log(
@@ -168,18 +163,16 @@ export class DocumentProcessingService {
         }
       }
 
-      // PASO 7: Extracción de datos estructurados
-      this.logger.log('Paso 5/7: Extracción de datos estructurados...');
+      // PASO 5: Extracción de datos estructurados
+      this.logger.log('Paso 5/6: Extracción de datos estructurados...');
       let extractedData: any;
 
       if (classification.isOthers) {
-        // Para "Otros", usar inferredData directamente
         extractedData = {
           summary: inferredData?.summary || 'Sin resumen',
           key_fields: inferredData?.key_fields || [],
         };
       } else {
-        // Para tipos conocidos, usar VISIÓN directa (Gemini ve el PDF/imagen completo)
         this.logger.log('🔍 Usando Gemini Vision para extracción de datos...');
         extractedData = await this.geminiClassifierService.extractDataWithVision(
           fileBuffer,
@@ -188,28 +181,36 @@ export class DocumentProcessingService {
         );
       }
 
-      // PASO 8: Mover archivo a carpeta del tipo clasificado
-      this.logger.log(`Paso 6/7: Moviendo archivo a carpeta "${documentType.name}"...`);
-      await this.googleDriveService.moveFile(
-        processingFileId,
-        documentType.googleDriveFolderId,
+      // PASO 6: Guardar extracted data como JSON en R2
+      const extractedKey = this.storageService.buildKey(
+        user.id,
+        'extracted',
+        `${Date.now()}-${originalName.replace(/\.[^.]+$/, '')}.json`,
       );
-      this.logger.log(`✅ Archivo movido a carpeta ${documentType.name}`);
+      await this.storageService.uploadFile(
+        Buffer.from(JSON.stringify(extractedData, null, 2)),
+        extractedKey,
+        'application/json',
+      );
+      this.logger.log(`✅ Datos extraídos guardados en R2: ${extractedKey}`);
 
-      // Obtener el link actualizado del archivo
-      const finalFile = await this.googleDriveService.getFile(processingFileId);
+      // Generate a presigned URL for the original file (valid 7 days for viewing)
+      const viewUrl = await this.storageService.getPresignedUrl(originalKey, 7 * 24 * 3600);
 
-      // PASO 9: Guardar en Base de Datos
-      this.logger.log('Paso 7/7: Guardando en base de datos...');
+      // PASO 7: Guardar en Base de Datos
+      this.logger.log('Paso 6/6: Guardando en base de datos...');
       const document = this.documentRepository.create({
         userId: user.id,
         documentTypeId: documentType.id,
         filename: originalName,
-        googleDriveLink: finalFile.webViewLink || publicUrl,
-        googleDriveFileId: processingFileId,
+        storageKey: originalKey,
+        storageProvider: 'r2',
+        // Keep legacy fields null for R2-stored docs
+        googleDriveLink: viewUrl,   // Backwards-compat: use presigned URL here
+        googleDriveFileId: null,
         ocrRawText: ocrResult.text,
         extractedData: extractedData,
-        inferredData: classification.isOthers ? inferredData : null, // Nuevo campo
+        inferredData: classification.isOthers ? inferredData : null,
         confidenceScore: classification.confidence,
         status: 'completed',
       });
@@ -223,24 +224,19 @@ export class DocumentProcessingService {
         wasClassified: !classification.isOthers,
         createdOthersFolder,
         message: classification.isOthers
-          ? `Documento guardado en carpeta "Otros". El modelo sugiere que podría ser: "${inferredData?.inferred_type || 'Documento Sin Clasificar'}"`
+          ? `Documento guardado en R2. El modelo sugiere que podría ser: "${inferredData?.inferred_type || 'Documento Sin Clasificar'}"`
           : `Documento clasificado como "${documentType.name}" con ${(classification.confidence * 100).toFixed(1)}% de confianza`,
       };
     } catch (error) {
-      this.logger.error(
-        `Error procesando documento: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Error procesando documento: ${error.message}`, error.stack);
 
       // Limpiar archivo temporal si hubo error
-      if (processingFileId) {
+      if (uploaded) {
         try {
-          await this.googleDriveService.deleteFile(processingFileId);
-          this.logger.log(`✅ Archivo temporal eliminado después de error`);
+          await this.storageService.deleteFile(originalKey);
+          this.logger.log('✅ Archivo temporal eliminado de R2 después de error');
         } catch (cleanupError) {
-          this.logger.error(
-            `Error eliminando archivo temporal: ${cleanupError.message}`,
-          );
+          this.logger.error(`Error eliminando archivo temporal de R2: ${cleanupError.message}`);
         }
       }
 
@@ -249,25 +245,21 @@ export class DocumentProcessingService {
   }
 
   /**
-   * Obtiene o crea la carpeta "Otros Documentos" para documentos sin clasificación
+   * Obtiene o crea el tipo "Otros Documentos" para documentos sin clasificación.
+   * Ya no crea carpetas en Google Drive.
    */
-  private async getOrCreateOthersFolder(user: User): Promise<DocumentType> {
+  private async getOrCreateOthersType(user: User): Promise<DocumentType> {
     const othersName = process.env.OTHERS_FOLDER_NAME || 'Otros Documentos';
 
-    // Buscar si ya existe (compartido entre todos los usuarios)
-    let othersFolder = await this.documentTypeRepository.findOne({
+    let othersType = await this.documentTypeRepository.findOne({
       where: { name: othersName },
     });
 
-    if (othersFolder) {
-      return othersFolder;
+    if (othersType) {
+      return othersType;
     }
 
-    // Crear carpeta en Google Drive
-    const driveFolder = await this.googleDriveService.createFolder(othersName);
-
-    // Crear tipo de documento "Otros" con campos básicos
-    othersFolder = this.documentTypeRepository.create({
+    othersType = this.documentTypeRepository.create({
       userId: user.id,
       name: othersName,
       description:
@@ -298,32 +290,14 @@ export class DocumentProcessingService {
           },
         ],
       },
-      googleDriveFolderId: driveFolder.id,
-      folderPath: driveFolder.webViewLink,
+      // No Google Drive folder — R2 handles storage
+      googleDriveFolderId: null,
+      folderPath: null,
     });
 
-    await this.documentTypeRepository.save(othersFolder);
+    await this.documentTypeRepository.save(othersType);
+    this.logger.log('✅ Tipo "Otros Documentos" creado exitosamente');
 
-    this.logger.log('✅ Carpeta "Otros Documentos" creada exitosamente');
-
-    return othersFolder;
-  }
-
-  /**
-   * Sube archivo a Google Drive
-   */
-  private async uploadToGoogleDrive(
-    fileBuffer: Buffer,
-    fileName: string,
-    mimeType: string,
-    folderId: string,
-  ): Promise<any> {
-    return await this.googleDriveService.uploadFile(
-      fileBuffer,
-      fileName,
-      mimeType,
-      folderId,
-    );
+    return othersType;
   }
 }
-
