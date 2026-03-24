@@ -66,11 +66,14 @@ export default function DashboardPage() {
   const [inputMessage, setInputMessage] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
 
+  const [isUnauthenticated, setIsUnauthenticated] = useState(false)
+
   // Load data
   useEffect(() => {
     const loadData = async () => {
       try {
         setIsLoading(true)
+        setIsUnauthenticated(false)
         const [docs, types] = await Promise.all([
           documentsService.getAll(),
           documentTypesService.getAll(),
@@ -79,11 +82,18 @@ export default function DashboardPage() {
         setDocumentTypes(types)
       } catch (error: any) {
         console.error("Error loading dashboard data:", error)
-        toast({
-          title: "Error",
-          description: "No se pudieron cargar los datos del dashboard",
-          variant: "destructive",
-        })
+        const status = error?.response?.status || error?.status
+        if (status === 401 || status === 403) {
+          setIsUnauthenticated(true)
+          setDocuments([])
+          setDocumentTypes([])
+        } else {
+          toast({
+            title: "Error",
+            description: "No se pudieron cargar los datos del dashboard",
+            variant: "destructive",
+          })
+        }
       } finally {
         setIsLoading(false)
       }
@@ -273,6 +283,25 @@ export default function DashboardPage() {
             Subir Documento
           </Button>
         </div>
+
+        {/* Unauthenticated Banner */}
+        {isUnauthenticated && (
+          <Card className="rounded-2xl border-dashed">
+            <CardContent className="p-6 text-center">
+              <FileText className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-50" />
+              <p className="text-sm font-medium text-muted-foreground">
+                Inicia sesión para ver tus documentos y estadísticas
+              </p>
+              <Button
+                variant="outline"
+                className="mt-3 rounded-full"
+                onClick={() => router.push("/login")}
+              >
+                Iniciar Sesión
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Metrics Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -632,7 +661,7 @@ export default function DashboardPage() {
                     <div className="rounded-lg bg-primary/10 p-2">
                       <HardDrive className="h-4 w-4 text-primary" />
                     </div>
-                    Explorar Google Drive
+                    Explorar Almacenamiento
                   </button>
                 </div>
               </CardContent>

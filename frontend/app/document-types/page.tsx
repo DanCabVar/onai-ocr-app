@@ -144,19 +144,19 @@ export default function DocumentTypesPage() {
     <div className="h-screen flex flex-col">
       {/* Header */}
       <div className="border-b p-6">
-        <div className="flex justify-between items-center max-w-[2200px] mx-auto px-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 max-w-[2200px] mx-auto px-4">
           <div>
             <h1 className="text-3xl font-bold font-primary">Tipos de Documento</h1>
             <p className="text-muted-foreground mt-1 font-secondary">
               Gestiona los tipos de documento y define que campos extraer
             </p>
           </div>
-          <div className="flex gap-2 shrink-0">
-            <Button variant="outline" className="rounded-full" onClick={() => setIsInferModalOpen(true)}>
+          <div className="flex flex-col sm:flex-row gap-2 shrink-0 w-full sm:w-auto">
+            <Button variant="outline" className="rounded-full w-full sm:w-auto" onClick={() => setIsInferModalOpen(true)}>
               <Sparkles className="h-4 w-4 mr-2" />
               Inferir desde Muestras
             </Button>
-            <Button className="rounded-full" onClick={handleCreate}>
+            <Button className="rounded-full w-full sm:w-auto" onClick={handleCreate}>
               <Plus className="h-4 w-4 mr-2" />
               Nuevo Tipo
             </Button>

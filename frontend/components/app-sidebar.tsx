@@ -12,7 +12,7 @@ import { useState } from "react";
 const mainNavItems = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Documentos", href: "/documents", icon: FileText },
-  { label: "Google Drive", href: "/drive", icon: HardDrive },
+  { label: "Almacenamiento", href: "/storage", icon: HardDrive },
 ];
 
 const configNavItems = [

@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google"
 import { JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { ConditionalNavigation } from "@/components/conditional-navigation"
+import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 
 const geistSans = Geist({ subsets: ["latin"], variable: "--font-geist-sans" })
@@ -24,10 +25,12 @@ export default function RootLayout({
   return (
     <html lang="es" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
-        <ConditionalNavigation>
-          {children}
-        </ConditionalNavigation>
-        <Toaster />
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+          <ConditionalNavigation>
+            {children}
+          </ConditionalNavigation>
+          <Toaster />
+        </ThemeProvider>
       </body>
     </html>
   )
