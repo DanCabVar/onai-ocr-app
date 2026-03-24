@@ -1,0 +1,721 @@
+"use client"
+
+import { useState, useEffect, useMemo, useCallback } from "react"
+import {
+  FileText,
+  Search,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Loader2,
+  Download,
+  RefreshCw,
+  Trash2,
+  Eye,
+  X,
+  Filter,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  FileSearch,
+  CalendarDays,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import { useToast } from "@/hooks/use-toast"
+import { cn } from "@/lib/utils"
+import { documentsService, Document, DocumentField } from "@/lib/api/documents.service"
+import { documentTypesService, DocumentType } from "@/lib/api/document-types.service"
+
+const PAGE_SIZE = 10
+
+function getStatusBadge(status: string) {
+  switch (status) {
+    case "completed":
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 dark:bg-green-900/30 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
+          <CheckCircle2 className="h-3 w-3" />
+          Completo
+        </span>
+      )
+    case "processing":
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 dark:bg-orange-900/30 px-2.5 py-0.5 text-xs font-medium text-orange-700 dark:text-orange-400">
+          <Clock className="h-3 w-3 animate-spin" />
+          En proceso
+        </span>
+      )
+    case "error":
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 dark:bg-red-900/30 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-400">
+          <AlertCircle className="h-3 w-3" />
+          Error
+        </span>
+      )
+    default:
+      return <Badge variant="secondary">{status}</Badge>
+  }
+}
+
+export default function DocumentsPage() {
+  const { toast } = useToast()
+  const [documents, setDocuments] = useState<Document[]>([])
+  const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [typeFilter, setTypeFilter] = useState<string>("all")
+  const [page, setPage] = useState(1)
+  const [selectedDoc, setSelectedDoc] = useState<Document | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [actionLoading, setActionLoading] = useState<number | null>(null)
+
+  const loadData = useCallback(async () => {
+    try {
+      setIsLoading(true)
+      const [docs, types] = await Promise.all([
+        documentsService.getAll(),
+        documentTypesService.getAll(),
+      ])
+      setDocuments(docs)
+      setDocumentTypes(types)
+    } catch (error: any) {
+      console.error("Error loading documents:", error)
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los documentos",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }, [toast])
+
+  useEffect(() => {
+    loadData()
+
+    const handler = () => loadData()
+    window.addEventListener("documentUploaded", handler)
+    return () => window.removeEventListener("documentUploaded", handler)
+  }, [loadData])
+
+  // Filtered documents
+  const filteredDocs = useMemo(() => {
+    return documents
+      .filter((doc) => {
+        if (statusFilter !== "all" && doc.status !== statusFilter) return false
+        if (typeFilter !== "all" && String(doc.documentTypeId) !== typeFilter) return false
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase()
+          return (
+            doc.filename.toLowerCase().includes(q) ||
+            doc.documentTypeName?.toLowerCase().includes(q) ||
+            doc.extractedData?.summary?.toLowerCase().includes(q)
+          )
+        }
+        return true
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  }, [documents, searchQuery, statusFilter, typeFilter])
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filteredDocs.length / PAGE_SIZE))
+  const paginatedDocs = filteredDocs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1)
+  }, [searchQuery, statusFilter, typeFilter])
+
+  // Stats
+  const stats = useMemo(() => ({
+    total: documents.length,
+    completed: documents.filter((d) => d.status === "completed").length,
+    processing: documents.filter((d) => d.status === "processing").length,
+    error: documents.filter((d) => d.status === "error").length,
+  }), [documents])
+
+  const openDetail = async (doc: Document) => {
+    // Try to fetch full detail
+    try {
+      const fullDoc = await documentsService.getById(doc.id)
+      setSelectedDoc(fullDoc)
+    } catch {
+      setSelectedDoc(doc)
+    }
+    setDetailOpen(true)
+  }
+
+  const handleDownload = (doc: Document) => {
+    if (doc.googleDriveLink) {
+      window.open(doc.googleDriveLink, "_blank")
+    } else {
+      toast({
+        title: "Sin enlace",
+        description: "Este documento no tiene enlace de descarga disponible",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleReprocess = async (doc: Document) => {
+    toast({
+      title: "Re-procesamiento",
+      description: `El documento "${doc.filename}" será re-procesado próximamente.`,
+    })
+  }
+
+  const handleDelete = async (doc: Document) => {
+    if (!confirm(`¿Eliminar "${doc.filename}"? Esta acción no se puede deshacer.`)) return
+    toast({
+      title: "Eliminación",
+      description: `El documento "${doc.filename}" será eliminado próximamente.`,
+    })
+  }
+
+  const renderFieldValue = (field: DocumentField) => {
+    if (field.value === null || field.value === undefined) {
+      return <span className="text-muted-foreground italic">Sin valor</span>
+    }
+    if (typeof field.value === "boolean") {
+      return field.value ? "Sí" : "No"
+    }
+    if (Array.isArray(field.value)) {
+      return field.value.join(", ")
+    }
+    return String(field.value)
+  }
+
+  return (
+    <div className="h-[calc(100vh-4rem)] overflow-y-auto">
+      <div className="p-4 sm:p-6 space-y-6 max-w-[1400px] mx-auto">
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-semibold font-primary tracking-tight">Documentos</h1>
+          <p className="text-sm text-muted-foreground font-secondary mt-1">
+            Gestiona y consulta todos los documentos procesados
+          </p>
+        </div>
+
+        {/* Mini Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <button
+            onClick={() => setStatusFilter("all")}
+            className={cn(
+              "flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+              statusFilter === "all" ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+            )}
+          >
+            <FileText className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <p className="text-lg font-bold font-primary">{stats.total}</p>
+              <p className="text-xs text-muted-foreground">Total</p>
+            </div>
+          </button>
+          <button
+            onClick={() => setStatusFilter("completed")}
+            className={cn(
+              "flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+              statusFilter === "completed" ? "border-green-500 bg-green-500/5" : "hover:bg-muted/50"
+            )}
+          >
+            <CheckCircle2 className="h-5 w-5 text-green-500" />
+            <div>
+              <p className="text-lg font-bold font-primary">{stats.completed}</p>
+              <p className="text-xs text-muted-foreground">Completados</p>
+            </div>
+          </button>
+          <button
+            onClick={() => setStatusFilter("processing")}
+            className={cn(
+              "flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+              statusFilter === "processing" ? "border-orange-500 bg-orange-500/5" : "hover:bg-muted/50"
+            )}
+          >
+            <Clock className="h-5 w-5 text-orange-500" />
+            <div>
+              <p className="text-lg font-bold font-primary">{stats.processing}</p>
+              <p className="text-xs text-muted-foreground">En proceso</p>
+            </div>
+          </button>
+          <button
+            onClick={() => setStatusFilter("error")}
+            className={cn(
+              "flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+              statusFilter === "error" ? "border-red-500 bg-red-500/5" : "hover:bg-muted/50"
+            )}
+          >
+            <AlertCircle className="h-5 w-5 text-red-500" />
+            <div>
+              <p className="text-lg font-bold font-primary">{stats.error}</p>
+              <p className="text-xs text-muted-foreground">Errores</p>
+            </div>
+          </button>
+        </div>
+
+        {/* Filters */}
+        <Card className="rounded-2xl">
+          <CardContent className="p-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por nombre, tipo o contenido..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-full sm:w-[200px]">
+                  <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Tipo de documento" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los tipos</SelectItem>
+                  {documentTypes.map((dt) => (
+                    <SelectItem key={dt.id} value={String(dt.id)}>
+                      {dt.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {(searchQuery || statusFilter !== "all" || typeFilter !== "all") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSearchQuery("")
+                    setStatusFilter("all")
+                    setTypeFilter("all")
+                  }}
+                  className="gap-1"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Limpiar
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Documents Table */}
+        <Card className="rounded-2xl">
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : filteredDocs.length === 0 ? (
+              <div className="text-center py-16 text-muted-foreground">
+                <FileSearch className="h-12 w-12 mx-auto mb-3 opacity-40" />
+                <p className="font-medium">No se encontraron documentos</p>
+                <p className="text-sm mt-1">
+                  {searchQuery || statusFilter !== "all" || typeFilter !== "all"
+                    ? "Intenta ajustar los filtros"
+                    : "Sube tu primer documento para comenzar"}
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Mobile card view */}
+                <div className="block sm:hidden divide-y">
+                  {paginatedDocs.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="p-4 space-y-2 active:bg-muted/50 transition-colors"
+                      onClick={() => openDetail(doc)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <span className="text-sm font-medium truncate">{doc.filename}</span>
+                        </div>
+                        {getStatusBadge(doc.status)}
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{doc.documentTypeName || "Sin tipo"}</span>
+                        <span className="flex items-center gap-1">
+                          <CalendarDays className="h-3 w-3" />
+                          {new Date(doc.createdAt).toLocaleDateString("es-ES", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                        </span>
+                      </div>
+                      {doc.confidenceScore > 0 && (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-primary transition-all"
+                              style={{ width: `${doc.confidenceScore * 100}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] font-mono text-muted-foreground">
+                            {(doc.confidenceScore * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop table view */}
+                <div className="hidden sm:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Archivo</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead>Confianza</TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead className="text-right">Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedDocs.map((doc) => (
+                        <TableRow key={doc.id} className="group">
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                              <span className="font-medium truncate max-w-[250px]">{doc.filename}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {doc.documentTypeName || (
+                              <span className="italic">Sin tipo</span>
+                            )}
+                          </TableCell>
+                          <TableCell>{getStatusBadge(doc.status)}</TableCell>
+                          <TableCell>
+                            {doc.confidenceScore > 0 ? (
+                              <div className="flex items-center gap-2 min-w-[80px]">
+                                <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className={cn(
+                                      "h-full rounded-full transition-all",
+                                      doc.confidenceScore >= 0.8
+                                        ? "bg-green-500"
+                                        : doc.confidenceScore >= 0.5
+                                          ? "bg-orange-500"
+                                          : "bg-red-500"
+                                    )}
+                                    style={{ width: `${doc.confidenceScore * 100}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs font-mono text-muted-foreground">
+                                  {(doc.confidenceScore * 100).toFixed(0)}%
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {new Date(doc.createdAt).toLocaleDateString("es-ES", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openDetail(doc)}
+                                title="Ver detalle"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleDownload(doc)}
+                                title="Descargar"
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleReprocess(doc)}
+                                title="Re-procesar"
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-red-500 hover:text-red-600"
+                                onClick={() => handleDelete(doc)}
+                                title="Eliminar"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t">
+                    <p className="text-sm text-muted-foreground">
+                      {filteredDocs.length} documento{filteredDocs.length !== 1 ? "s" : ""}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        disabled={page <= 1}
+                        onClick={() => setPage(page - 1)}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-sm px-3">
+                        {page} / {totalPages}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        disabled={page >= totalPages}
+                        onClick={() => setPage(page + 1)}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Document Detail Modal */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="font-primary flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              {selectedDoc?.filename || "Documento"}
+            </DialogTitle>
+            <DialogDescription>
+              Detalle completo del documento procesado
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedDoc && (
+            <ScrollArea className="flex-1 pr-4">
+              <div className="space-y-6 pb-4">
+                {/* Meta info */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Estado</p>
+                    {getStatusBadge(selectedDoc.status)}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Tipo</p>
+                    <p className="text-sm font-medium">{selectedDoc.documentTypeName || "Sin tipo"}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Confianza</p>
+                    <p className="text-sm font-medium font-mono">
+                      {selectedDoc.confidenceScore > 0
+                        ? `${(selectedDoc.confidenceScore * 100).toFixed(1)}%`
+                        : "—"}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Fecha</p>
+                    <p className="text-sm font-medium">
+                      {new Date(selectedDoc.createdAt).toLocaleDateString("es-ES", {
+                        day: "2-digit",
+                        month: "long",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Summary */}
+                {selectedDoc.extractedData?.summary && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Resumen</p>
+                    <p className="text-sm leading-relaxed bg-muted/50 rounded-lg p-3">
+                      {selectedDoc.extractedData.summary}
+                    </p>
+                  </div>
+                )}
+
+                {/* Extracted Fields */}
+                {(selectedDoc.extractedData?.fields || selectedDoc.extractedData?.key_fields) && (
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Datos Extraídos</p>
+                    <div className="rounded-lg border overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[40%]">Campo</TableHead>
+                            <TableHead>Valor</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(selectedDoc.extractedData.fields || selectedDoc.extractedData.key_fields || []).map(
+                            (field: DocumentField, index: number) => (
+                              <TableRow key={index}>
+                                <TableCell className="font-medium text-sm">
+                                  {field.label || field.name}
+                                  {field.required && (
+                                    <span className="text-red-500 ml-1">*</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-sm">{renderFieldValue(field)}</TableCell>
+                              </TableRow>
+                            )
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Inferred Data (for "Otros" documents) */}
+                {selectedDoc.inferredData && (
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                      Datos Inferidos (tipo: {selectedDoc.inferredData.inferred_type})
+                    </p>
+                    <p className="text-sm leading-relaxed bg-muted/50 rounded-lg p-3">
+                      {selectedDoc.inferredData.summary}
+                    </p>
+                    {selectedDoc.inferredData.key_fields?.length > 0 && (
+                      <div className="rounded-lg border overflow-hidden">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-[40%]">Campo</TableHead>
+                              <TableHead>Valor</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {selectedDoc.inferredData.key_fields.map(
+                              (field: DocumentField, index: number) => (
+                                <TableRow key={index}>
+                                  <TableCell className="font-medium text-sm">
+                                    {field.label || field.name}
+                                  </TableCell>
+                                  <TableCell className="text-sm">{renderFieldValue(field)}</TableCell>
+                                </TableRow>
+                              )
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* OCR Raw Text */}
+                {selectedDoc.ocrRawText && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Texto OCR</p>
+                    <pre className="text-xs bg-muted/50 rounded-lg p-3 whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto font-mono">
+                      {selectedDoc.ocrRawText}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {selectedDoc.googleDriveLink && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => window.open(selectedDoc.googleDriveLink, "_blank")}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Ver en Drive
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => handleDownload(selectedDoc)}
+                  >
+                    <Download className="h-4 w-4" />
+                    Descargar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => handleReprocess(selectedDoc)}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Re-procesar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 text-red-500 hover:text-red-600"
+                    onClick={() => {
+                      handleDelete(selectedDoc)
+                      setDetailOpen(false)
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Eliminar
+                  </Button>
+                </div>
+              </div>
+            </ScrollArea>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

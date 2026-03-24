@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import {
   FileText,
@@ -24,6 +24,7 @@ import {
   TrendingUp,
   Activity,
 } from "lucide-react"
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -143,6 +144,29 @@ export default function DashboardPage() {
       status: doc.status,
       time: formatRelativeTime(doc.createdAt),
     }))
+
+  // Chart data: documents processed per day (last 14 days)
+  const chartData = useMemo(() => {
+    const now = new Date()
+    const days: { date: string; label: string; completados: number; errores: number; total: number }[] = []
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now)
+      d.setDate(d.getDate() - i)
+      const key = d.toISOString().slice(0, 10)
+      const label = d.toLocaleDateString("es-ES", { day: "2-digit", month: "short" })
+      const dayDocs = documents.filter(
+        (doc) => new Date(doc.createdAt).toISOString().slice(0, 10) === key
+      )
+      days.push({
+        date: key,
+        label,
+        completados: dayDocs.filter((d) => d.status === "completed").length,
+        errores: dayDocs.filter((d) => d.status === "error").length,
+        total: dayDocs.length,
+      })
+    }
+    return days
+  }, [documents])
 
   // New types this month
   const thisMonth = new Date()
@@ -366,6 +390,82 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Chart: Documentos procesados por día */}
+        <Card className="rounded-2xl">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-primary flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              Documentos Procesados (últimos 14 días)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="flex items-center justify-center h-[220px]">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : (
+              <div className="h-[220px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorCompletados" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="colorErrores" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border/40" />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 11 }}
+                      className="fill-muted-foreground"
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fontSize: 11 }}
+                      className="fill-muted-foreground"
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                      }}
+                      labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="completados"
+                      name="Completados"
+                      stroke="hsl(var(--primary))"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#colorCompletados)"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="errores"
+                      name="Errores"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#colorErrores)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Two-Column Area */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
