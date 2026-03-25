@@ -224,6 +224,31 @@ export class DocumentsService {
   }
 
   /**
+   * Upload multiple documents in batch.
+   */
+  async uploadBatch(files: Express.Multer.File[], user: User) {
+    this.logger.log(`📦 Batch upload: ${files.length} archivos para usuario ${user.id}`);
+    return this.documentProcessingService.processBatch(files, user);
+  }
+
+  /**
+   * Confirm or cancel a pending document type.
+   */
+  async confirmType(
+    documentId: number,
+    action: 'create_type' | 'cancel',
+    user: User,
+    typeName?: string,
+  ) {
+    return this.documentProcessingService.confirmDocumentType(
+      documentId,
+      action,
+      user,
+      typeName,
+    );
+  }
+
+  /**
    * List all files for a user in R2 storage.
    */
   async listUserFiles(user: User) {
