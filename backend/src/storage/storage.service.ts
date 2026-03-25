@@ -69,6 +69,29 @@ export class StorageService implements OnModuleInit {
   }
 
   /**
+   * Build a type-organized storage key:
+   *   {userId}/tipos/{tipoSlug}/{filename}
+   * Used for batch processing to organize files by document type.
+   */
+  buildTypedKey(userId: number, typeName: string, filename: string): string {
+    const slug = this.slugify(typeName);
+    return `${userId}/tipos/${slug}/${filename}`;
+  }
+
+  /**
+   * Convert a type name to a URL-safe slug.
+   * "Factura de Venta" → "factura-de-venta"
+   */
+  private slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // remove accents
+      .replace(/[^a-z0-9]+/g, '-')     // non-alphanumeric → dash
+      .replace(/^-+|-+$/g, '');         // trim leading/trailing dashes
+  }
+
+  /**
    * Upload a file (Buffer) to R2.
    */
   async uploadFile(
