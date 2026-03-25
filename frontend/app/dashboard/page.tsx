@@ -709,7 +709,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Chat flotante - burbuja en esquina inferior derecha (kept from original) */}
-      <div className="fixed bottom-6 right-4 sm:right-6 z-50 max-w-[calc(100vw-2rem)]">
+      <div className="fixed bottom-4 right-4 z-50" style={{ maxWidth: 'calc(100vw - 2rem)', maxHeight: 'calc(100vh - 2rem)' }}>
         {!messages.length && !isProcessing ? (
           <Button
             className="!h-16 !w-16 !p-0 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center"
@@ -728,7 +728,7 @@ export default function DashboardPage() {
             <Bot className="!h-11 !w-11" />
           </Button>
         ) : (
-          <Card className="w-[calc(100vw-2rem)] sm:w-96 max-h-[70vh] h-[500px] flex flex-col shadow-2xl">
+          <Card className="w-[calc(100vw-2rem)] sm:w-96 h-[calc(100vh-6rem)] sm:h-[500px] max-h-[500px] flex flex-col shadow-2xl overflow-hidden">
             <div className="p-4 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Bot className="h-5 w-5 text-primary" />
