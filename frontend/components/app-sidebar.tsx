@@ -11,7 +11,7 @@ import { useState, useEffect } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const mainNavItems = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Documentos", href: "/documents", icon: FileText },
   { label: "Almacenamiento", href: "/storage", icon: HardDrive },
 ];
@@ -46,7 +46,7 @@ export function AppSidebar() {
   };
 
   const isActive = (href: string) => {
-    if (href === "/") return pathname === "/";
+    if (href === "/dashboard") return pathname === "/dashboard";
     return pathname.startsWith(href);
   };
 

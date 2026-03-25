@@ -38,7 +38,7 @@ export function ConditionalNavigation({ children }: { children: React.ReactNode 
     window.dispatchEvent(new CustomEvent("documentUploaded"))
   }, [])
 
-  const isPublicRoute = pathname === '/login' || pathname === '/register'
+  const isPublicRoute = pathname === '/' || pathname === '/login' || pathname === '/register'
 
   if (isPublicRoute) {
     return <>{children}</>
