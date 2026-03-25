@@ -573,7 +573,7 @@ export default function DocumentsPage() {
 
       {/* Document Detail Modal */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-primary flex items-center gap-2">
               <FileText className="h-5 w-5 shrink-0" />
@@ -587,15 +587,20 @@ export default function DocumentsPage() {
                 <button
                   onClick={async () => {
                     try {
-                      const token = localStorage.getItem('token');
+                      const token = localStorage.getItem('auth_token');
                       const res = await fetch(`/api/documents/${selectedDoc.id}/download-url`, {
                         headers: { Authorization: `Bearer ${token}` }
                       });
                       if (res.ok) {
                         const data = await res.json();
-                        window.open(data.url || data.downloadUrl, '_blank');
+                        const downloadUrl = data.url || data.downloadUrl;
+                        if (downloadUrl) window.open(downloadUrl, '_blank');
+                      } else {
+                        alert('No se pudo obtener el enlace de descarga');
                       }
-                    } catch {}
+                    } catch (e) {
+                      alert('Error al descargar el documento');
+                    }
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
                 >
@@ -657,7 +662,7 @@ export default function DocumentsPage() {
                 {(selectedDoc.extractedData?.fields || selectedDoc.extractedData?.key_fields) && (
                   <div className="space-y-3">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Datos Extraídos</p>
-                    <div className="rounded-lg border overflow-hidden">
+                    <div className="rounded-lg border overflow-x-auto">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -675,7 +680,7 @@ export default function DocumentsPage() {
                                     <span className="text-red-500 ml-1">*</span>
                                   )}
                                 </TableCell>
-                                <TableCell className="text-sm">{renderFieldValue(field)}</TableCell>
+                                <TableCell className="text-sm break-all">{renderFieldValue(field)}</TableCell>
                               </TableRow>
                             )
                           )}
@@ -695,7 +700,7 @@ export default function DocumentsPage() {
                       {selectedDoc.inferredData.summary}
                     </p>
                     {selectedDoc.inferredData.key_fields?.length > 0 && (
-                      <div className="rounded-lg border overflow-hidden">
+                      <div className="rounded-lg border overflow-x-auto">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -710,7 +715,7 @@ export default function DocumentsPage() {
                                   <TableCell className="font-medium text-sm">
                                     {field.label || field.name}
                                   </TableCell>
-                                  <TableCell className="text-sm">{renderFieldValue(field)}</TableCell>
+                                  <TableCell className="text-sm break-all">{renderFieldValue(field)}</TableCell>
                                 </TableRow>
                               )
                             )}
