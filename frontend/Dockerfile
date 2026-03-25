@@ -19,9 +19,8 @@ RUN pnpm install --frozen-lockfile
 # Copiar código fuente
 COPY . .
 
-# Variables de entorno necesarias en build time
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# No longer need NEXT_PUBLIC_API_URL at build time — API calls use relative
+# URLs (/api/*) which are proxied via next.config.mjs rewrites at runtime.
 
 # Compilar la aplicación Next.js
 RUN pnpm run build
@@ -51,6 +50,8 @@ EXPOSE 3000
 # Variables de entorno por defecto
 ENV NODE_ENV=production
 ENV PORT=3000
+# Backend URL for Next.js rewrites (docker-compose service name)
+ENV BACKEND_URL=http://backend:4000
 
 # Comando para iniciar Next.js
 CMD ["pnpm", "start"]

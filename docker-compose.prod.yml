@@ -162,7 +162,7 @@ services:
     container_name: onai-ocr-frontend
     restart: always
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - BACKEND_URL=${BACKEND_URL:-http://backend:4000}
     depends_on:
       backend:
         condition: service_healthy

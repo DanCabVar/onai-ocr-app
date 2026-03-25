@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+// Use relative URL so requests go to the same origin (proxied by Next.js rewrites)
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 export interface InferredField {
   name: string;

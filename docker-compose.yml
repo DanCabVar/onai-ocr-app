@@ -92,12 +92,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000/api}
     container_name: onai-ocr-frontend
     restart: always
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000/api}
+      - BACKEND_URL=${BACKEND_URL:-http://backend:4000}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:

@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { authService } from "@/lib/api/auth.service";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const mainNavItems = [
@@ -25,7 +25,20 @@ export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const user = authService.getStoredUser();
+  const [user, setUser] = useState(authService.getStoredUser());
+
+  // Re-read user from localStorage when navigating (e.g. after login)
+  useEffect(() => {
+    const handleStorageOrNav = () => setUser(authService.getStoredUser());
+    window.addEventListener("storage", handleStorageOrNav);
+    window.addEventListener("focus", handleStorageOrNav);
+    // Also check on pathname change
+    handleStorageOrNav();
+    return () => {
+      window.removeEventListener("storage", handleStorageOrNav);
+      window.removeEventListener("focus", handleStorageOrNav);
+    };
+  }, [pathname]);
 
   const handleLogout = () => {
     authService.clearAuth();

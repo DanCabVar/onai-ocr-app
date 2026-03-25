@@ -42,7 +42,7 @@ export const googleDriveService = {
 
   // Obtener URL de autenticación
   getAuthUrl(): string {
-    return `${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '')}/api/google/auth`;
+    return `/api/google/auth`;
   },
 };
 
