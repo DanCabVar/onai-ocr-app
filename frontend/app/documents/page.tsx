@@ -573,29 +573,51 @@ export default function DocumentsPage() {
 
       {/* Document Detail Modal */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="font-primary flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              {selectedDoc?.filename || "Documento"}
+              <FileText className="h-5 w-5 shrink-0" />
+              <span className="truncate">{selectedDoc?.filename || "Documento"}</span>
             </DialogTitle>
             <DialogDescription>
               Detalle completo del documento procesado
             </DialogDescription>
+            {selectedDoc && (
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      const token = localStorage.getItem('token');
+                      const res = await fetch(`/api/documents/${selectedDoc.id}/download-url`, {
+                        headers: { Authorization: `Bearer ${token}` }
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        window.open(data.url || data.downloadUrl, '_blank');
+                      }
+                    } catch {}
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Ver PDF Original
+                </button>
+              </div>
+            )}
           </DialogHeader>
 
           {selectedDoc && (
             <ScrollArea className="flex-1 pr-4">
               <div className="space-y-6 pb-4">
                 {/* Meta info */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Estado</p>
                     {getStatusBadge(selectedDoc.status)}
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Tipo</p>
-                    <p className="text-sm font-medium">{selectedDoc.documentTypeName || "Sin tipo"}</p>
+                    <p className="text-sm font-medium break-words">{selectedDoc.documentTypeName || "Sin tipo"}</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Confianza</p>
@@ -625,7 +647,7 @@ export default function DocumentsPage() {
                 {selectedDoc.extractedData?.summary && (
                   <div className="space-y-2">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Resumen</p>
-                    <p className="text-sm leading-relaxed bg-muted/50 rounded-lg p-3">
+                    <p className="text-sm leading-relaxed bg-muted/50 rounded-lg p-3 break-words">
                       {selectedDoc.extractedData.summary}
                     </p>
                   </div>
