@@ -4,26 +4,22 @@ import {
   Post,
   Patch,
   Body,
-  Req,
-  Res,
   UseGuards,
   BadRequestException,
-  RawBodyRequest,
-  Headers,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
 import { SubscriptionsService } from './subscriptions.service';
-import { StripeService } from './stripe.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../database/entities/user.entity';
-import { SubscriptionPlan, PLAN_LIMITS } from '../database/entities/subscription.entity';
+import {
+  SubscriptionPlan,
+  PLAN_LIMITS,
+} from '../database/entities/subscription.entity';
 
 @Controller('subscriptions')
 export class SubscriptionsController {
   constructor(
     private readonly subscriptionsService: SubscriptionsService,
-    private readonly stripeService: StripeService,
   ) {}
 
   // ─── Authenticated endpoints ───
@@ -45,8 +41,10 @@ export class SubscriptionsController {
     return Object.entries(PLAN_LIMITS).map(([plan, limits]) => ({
       plan,
       ...limits,
-      docsPerMonth: limits.docsPerMonth === -1 ? 'unlimited' : limits.docsPerMonth,
-      docTypesMax: limits.docTypesMax === -1 ? 'unlimited' : limits.docTypesMax,
+      docsPerMonth:
+        limits.docsPerMonth === -1 ? 'unlimited' : limits.docsPerMonth,
+      docTypesMax:
+        limits.docTypesMax === -1 ? 'unlimited' : limits.docTypesMax,
     }));
   }
 
@@ -56,18 +54,23 @@ export class SubscriptionsController {
     @CurrentUser() user: User,
     @Body('plan') plan: SubscriptionPlan,
   ) {
-    const validPlans: SubscriptionPlan[] = ['free', 'starter', 'pro', 'enterprise'];
+    const validPlans: SubscriptionPlan[] = [
+      'free',
+      'starter',
+      'pro',
+      'enterprise',
+    ];
     if (!validPlans.includes(plan)) {
       throw new BadRequestException(`Plan inválido: ${plan}`);
     }
     return this.subscriptionsService.updatePlan(user.id, plan);
   }
 
-  // ─── Stripe Checkout ───
+  // ─── Stripe convenience endpoints (delegates to SubscriptionsService) ───
 
   /**
-   * POST /api/subscriptions/checkout — create Stripe Checkout session
-   * Body: { plan: 'starter' | 'pro' | 'enterprise' }
+   * POST /api/subscriptions/checkout
+   * Convenience endpoint: creates Stripe Checkout session via SubscriptionsService.
    */
   @UseGuards(JwtAuthGuard)
   @Post('checkout')
@@ -81,39 +84,16 @@ export class SubscriptionsController {
         `Plan inválido para checkout: "${plan}". Opciones: starter, pro, enterprise.`,
       );
     }
-    return this.stripeService.createCheckoutSession(user.id, user.email, plan);
+    return this.subscriptionsService.upgradePlan(user.id, user.email, plan);
   }
 
   /**
-   * POST /api/subscriptions/portal — create Stripe Customer Portal session
+   * POST /api/subscriptions/portal
+   * Convenience endpoint: creates Stripe Customer Portal session.
    */
   @UseGuards(JwtAuthGuard)
   @Post('portal')
   async createPortal(@CurrentUser() user: User) {
-    return this.stripeService.createPortalSession(user.id);
-  }
-
-  // ─── Stripe Webhook (no auth guard — verified by signature) ───
-
-  /**
-   * POST /api/subscriptions/webhook — Stripe webhook handler
-   * Requires raw body for signature verification.
-   */
-  @Post('webhook')
-  async handleWebhook(
-    @Req() req: RawBodyRequest<Request>,
-    @Headers('stripe-signature') signature: string,
-  ) {
-    if (!signature) {
-      throw new BadRequestException('Missing stripe-signature header');
-    }
-
-    const rawBody = req.rawBody;
-    if (!rawBody) {
-      throw new BadRequestException('Raw body not available. Ensure rawBody is enabled.');
-    }
-
-    await this.stripeService.handleWebhook(rawBody, signature);
-    return { received: true };
+    return this.subscriptionsService.getPortalUrl(user.id);
   }
 }

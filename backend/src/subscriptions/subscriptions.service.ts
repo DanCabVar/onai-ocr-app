@@ -10,6 +10,7 @@ import {
   SubscriptionPlan,
   PLAN_LIMITS,
 } from '../database/entities/subscription.entity';
+import { StripeService } from '../stripe/stripe.service';
 
 @Injectable()
 export class SubscriptionsService {
@@ -18,6 +19,7 @@ export class SubscriptionsService {
   constructor(
     @InjectRepository(Subscription)
     private readonly subscriptionRepository: Repository<Subscription>,
+    private readonly stripeService: StripeService,
   ) {}
 
   /**
@@ -110,7 +112,7 @@ export class SubscriptionsService {
   }
 
   /**
-   * Update a user's plan.
+   * Update a user's plan (direct, without Stripe).
    */
   async updatePlan(
     userId: number,
@@ -130,6 +132,41 @@ export class SubscriptionsService {
     this.logger.log(`User ${userId} plan updated to ${plan}`);
     return sub;
   }
+
+  // ─── Stripe-integrated methods ────────────────────────────────────
+
+  /**
+   * Upgrade plan via Stripe Checkout.
+   * Returns the Stripe Checkout URL for the user to complete payment.
+   */
+  async upgradePlan(
+    userId: number,
+    email: string,
+    planSlug: SubscriptionPlan,
+  ): Promise<{ url: string; sessionId: string }> {
+    // Ensure subscription record exists
+    await this.getOrCreate(userId);
+    return this.stripeService.createCheckoutSession(userId, email, planSlug);
+  }
+
+  /**
+   * Sync subscription data from Stripe by subscription ID.
+   * Fetches latest data from Stripe API and updates local DB.
+   */
+  async syncFromStripe(stripeSubscriptionId: string): Promise<Subscription> {
+    return this.stripeService.syncFromStripe(stripeSubscriptionId);
+  }
+
+  /**
+   * Get Stripe Customer Portal URL for a user to manage their billing.
+   */
+  async getPortalUrl(userId: number): Promise<{ url: string }> {
+    // Ensure subscription record exists
+    await this.getOrCreate(userId);
+    return this.stripeService.createCustomerPortalSession(userId);
+  }
+
+  // ─── Status ───────────────────────────────────────────────────────
 
   /**
    * Get subscription status for display.
