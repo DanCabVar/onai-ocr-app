@@ -9,6 +9,7 @@ import {
   Subscription,
   SubscriptionPlan,
   PLAN_LIMITS,
+  PLAN_PRICES,
 } from '../database/entities/subscription.entity';
 import { StripeService } from '../stripe/stripe.service';
 
@@ -177,6 +178,7 @@ export class SubscriptionsService {
     docsLimit: number;
     docTypesLimit: number;
     maxFileSizeMb: number;
+    price: number | null;
     periodEnd: Date | null;
     active: boolean;
   }> {
@@ -189,6 +191,7 @@ export class SubscriptionsService {
       docsLimit: limits.docsPerMonth,
       docTypesLimit: limits.docTypesMax,
       maxFileSizeMb: limits.maxFileSizeMb,
+      price: PLAN_PRICES[sub.plan],
       periodEnd: sub.periodEnd,
       active: sub.active,
     };

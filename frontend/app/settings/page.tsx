@@ -133,12 +133,19 @@ export default function SettingsPage() {
     setLoadingSub(true)
     try {
       const response = await apiClient.get("/subscriptions")
-      setSubscription(response.data)
+      const data = response.data
+      // Map backend shape to frontend shape
+      setSubscription({
+        plan: (data.plan || "free").toUpperCase(),
+        documentsUsed: data.docsUsed ?? data.documentsUsed ?? 0,
+        documentsLimit: data.docsLimit === -1 ? Infinity : (data.docsLimit ?? data.documentsLimit ?? 50),
+        price: data.price ?? 0,
+      })
     } catch {
-      // Use defaults if endpoint doesn't exist yet
+      // Use defaults if endpoint fails
       setSubscription({
         plan: "FREE",
-        documentsUsed: 12,
+        documentsUsed: 0,
         documentsLimit: 50,
         price: 0,
       })
@@ -232,7 +239,11 @@ export default function SettingsPage() {
     )
   }
 
-  const usagePercent = subscription ? Math.round((subscription.documentsUsed / subscription.documentsLimit) * 100) : 0
+  const usagePercent = subscription
+    ? subscription.documentsLimit === Infinity || subscription.documentsLimit <= 0
+      ? 0
+      : Math.round((subscription.documentsUsed / subscription.documentsLimit) * 100)
+    : 0
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
@@ -408,12 +419,14 @@ export default function SettingsPage() {
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Documentos procesados</span>
                       <span className="font-medium">
-                        {subscription.documentsUsed} / {subscription.documentsLimit}
+                        {subscription.documentsUsed} / {subscription.documentsLimit === Infinity ? "∞" : subscription.documentsLimit}
                       </span>
                     </div>
                     <Progress value={usagePercent} className="h-3" />
                     <p className="text-xs text-muted-foreground">
-                      {usagePercent}% utilizado · {subscription.documentsLimit - subscription.documentsUsed} documentos restantes
+                      {subscription.documentsLimit === Infinity
+                        ? `${subscription.documentsUsed} documentos procesados · Ilimitado`
+                        : `${usagePercent}% utilizado · ${subscription.documentsLimit - subscription.documentsUsed} documentos restantes`}
                     </p>
                   </div>
                 </div>

@@ -14,6 +14,7 @@ import { User } from '../database/entities/user.entity';
 import {
   SubscriptionPlan,
   PLAN_LIMITS,
+  PLAN_PRICES,
 } from '../database/entities/subscription.entity';
 
 @Controller('subscriptions')
@@ -38,13 +39,35 @@ export class SubscriptionsController {
 
   @Get('plans')
   getPlans() {
+    const planDescriptions: Record<string, { description: string; features: string[] }> = {
+      free: {
+        description: 'Para comenzar',
+        features: [`${PLAN_LIMITS.free.docsPerMonth} documentos/mes`, 'OCR básico', `${PLAN_LIMITS.free.docTypesMax} tipo(s) de documento`],
+      },
+      starter: {
+        description: 'Para pequeños negocios',
+        features: [`${PLAN_LIMITS.starter.docsPerMonth} documentos/mes`, 'OCR avanzado', `${PLAN_LIMITS.starter.docTypesMax} tipos de documento`, 'Soporte email'],
+      },
+      pro: {
+        description: 'Para empresas en crecimiento',
+        features: [`${PLAN_LIMITS.pro.docsPerMonth.toLocaleString()} documentos/mes`, 'OCR avanzado + IA', 'Tipos ilimitados', 'Soporte prioritario', 'API access'],
+      },
+      enterprise: {
+        description: 'Solución a medida',
+        features: ['Documentos ilimitados', 'IA personalizada', 'SLA dedicado', 'Soporte 24/7', 'On-premise disponible'],
+      },
+    };
+
     return Object.entries(PLAN_LIMITS).map(([plan, limits]) => ({
+      id: plan,
+      name: plan.toUpperCase(),
       plan,
-      ...limits,
-      docsPerMonth:
-        limits.docsPerMonth === -1 ? 'unlimited' : limits.docsPerMonth,
-      docTypesMax:
-        limits.docTypesMax === -1 ? 'unlimited' : limits.docTypesMax,
+      price: PLAN_PRICES[plan as SubscriptionPlan],
+      documentsLimit: limits.docsPerMonth === -1 ? null : limits.docsPerMonth,
+      docsPerMonth: limits.docsPerMonth === -1 ? 'unlimited' : limits.docsPerMonth,
+      docTypesMax: limits.docTypesMax === -1 ? 'unlimited' : limits.docTypesMax,
+      maxFileSizeMb: limits.maxFileSizeMb,
+      ...planDescriptions[plan],
     }));
   }
 

@@ -28,6 +28,13 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, {
   enterprise: { docsPerMonth: -1,    docTypesMax: -1,  maxFileSizeMb: 50, batchInferMax: 10 },
 };
 
+export const PLAN_PRICES: Record<SubscriptionPlan, number | null> = {
+  free: 0,
+  starter: 29,
+  pro: 49,
+  enterprise: null,
+};
+
 @Entity('subscriptions')
 export class Subscription {
   @PrimaryGeneratedColumn()
