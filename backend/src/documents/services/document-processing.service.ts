@@ -310,7 +310,7 @@ export class DocumentProcessingService {
         googleDriveFileId: null,
         ocrRawText: ocrResult.text,
         extractedData,
-        inferredData: classification.isOthers ? inferredData : null,
+        inferredData: (classification.isOthers ? inferredData : null) as any,
         confidenceScore: classification.confidence,
         status: 'completed',
       });
