@@ -11,7 +11,16 @@ export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
 
   /**
-   * GET /api/subscriptions/status — current subscription status
+   * GET /api/subscriptions — shorthand for current subscription status
+   * (frontend may call /api/subscription or /api/subscriptions)
+   */
+  @Get()
+  async getStatusShort(@CurrentUser() user: User) {
+    return this.subscriptionsService.getStatus(user.id);
+  }
+
+  /**
+   * GET /api/subscriptions/status — current subscription status (legacy)
    */
   @Get('status')
   async getStatus(@CurrentUser() user: User) {
