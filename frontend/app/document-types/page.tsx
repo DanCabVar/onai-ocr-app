@@ -271,11 +271,16 @@ export default function DocumentTypesPage() {
 
               {/* Selected Type Detail — Fields Table */}
               {selectedType && (
-                <Card className="rounded-2xl">
+                <Card className="rounded-2xl max-h-[calc(100vh-220px)] flex flex-col overflow-hidden">
                   <div className="p-4 border-b flex items-center justify-between">
-                    <h2 className="text-lg font-semibold font-primary">
-                      Campos de: {selectedType.name}
-                    </h2>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-semibold font-primary">
+                        Campos de: {selectedType.name}
+                      </h2>
+                      <Badge variant="secondary" className="text-xs">
+                        {selectedType.fieldSchema.fields.length}
+                      </Badge>
+                    </div>
                     <div className="flex gap-2">
                       <Button
                         variant="outline"
@@ -288,7 +293,7 @@ export default function DocumentTypesPage() {
                       </Button>
                     </div>
                   </div>
-                  <div className="overflow-auto">
+                  <div className="overflow-auto flex-1">
                     {selectedType.fieldSchema.fields.length > 0 ? (
                       <Table>
                         <TableHeader>
