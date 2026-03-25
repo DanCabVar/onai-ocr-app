@@ -146,6 +146,7 @@ export class DocumentProcessingService {
     originalName: string,
     mimeType: string,
     user: User,
+    existingDocId?: number,
   ): Promise<ProcessingResult> {
     // ─── Validaciones previas ───
     this.validateFile(fileBuffer, mimeType, originalName);
@@ -156,15 +157,19 @@ export class DocumentProcessingService {
     const ctx = this.metrics.createContext(originalName);
 
     const originalKey = this.storageService.buildKey(user.id, 'originals', originalName);
-    let uploaded = false;
+    let uploaded = !!existingDocId; // If existing doc, file is already uploaded
 
     try {
-      // ─── PASO 1: Upload to R2 ───
-      const uploadMetric = this.metrics.startStage(ctx, 'upload-r2');
-      await this.storageService.uploadFile(fileBuffer, originalKey, mimeType);
-      uploaded = true;
-      this.metrics.endStage(uploadMetric);
-      this.logger.log(`✅ R2 upload: ${originalKey}`);
+      // ─── PASO 1: Upload to R2 (skip if already uploaded by caller) ───
+      if (!existingDocId) {
+        const uploadMetric = this.metrics.startStage(ctx, 'upload-r2');
+        await this.storageService.uploadFile(fileBuffer, originalKey, mimeType);
+        uploaded = true;
+        this.metrics.endStage(uploadMetric);
+        this.logger.log(`✅ R2 upload: ${originalKey}`);
+      } else {
+        this.logger.log(`⏭️ R2 upload skipped (existing doc ${existingDocId})`);
+      }
 
       // ─── PASO 2: Presigned URL ───
       const presignMetric = this.metrics.startStage(ctx, 'presign-url');

@@ -91,6 +91,49 @@ export class DocumentsService {
     }
   }
 
+  /**
+   * Background processing — runs the full OCR+classify+extract pipeline
+   * outside the HTTP request lifecycle. Updates document status on completion/failure.
+   */
+  private processInBackground(
+    documentId: number,
+    fileBuffer: Buffer,
+    originalName: string,
+    mimeType: string,
+    user: User,
+  ): void {
+    // Intentionally not awaited — runs after HTTP response is sent
+    (async () => {
+      try {
+        const result = await this.documentProcessingService.processDocument(
+          fileBuffer,
+          originalName,
+          mimeType,
+          user,
+          documentId, // pass existing doc ID so pipeline updates instead of creating
+        );
+        this.logger.log(`✅ Background processing complete: doc ${documentId}`);
+      } catch (error) {
+        this.logger.error(
+          `❌ Background processing failed for doc ${documentId}: ${error.message}`,
+          error.stack,
+        );
+        // Mark as failed in DB
+        try {
+          await this.documentRepository.update(documentId, {
+            status: 'error',
+            extractedData: {
+              error: error.message,
+              failedAt: new Date().toISOString(),
+            },
+          });
+        } catch (dbError) {
+          this.logger.error(`Failed to update error status: ${dbError.message}`);
+        }
+      }
+    })();
+  }
+
   async getDocuments(user: User) {
     const documents = await this.documentRepository.find({
       where: { userId: user.id },
