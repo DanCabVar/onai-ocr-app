@@ -43,6 +43,15 @@ export function Navigation({ onDocumentUploaded }: NavigationProps) {
         : user.email[0].toUpperCase()
       setUserInitials(initials)
     }
+
+    // Listen for openUploadModal events from other components (e.g. Dashboard)
+    const handleOpenUploadModal = () => {
+      setUploadModalOpen(true)
+    }
+    window.addEventListener("openUploadModal", handleOpenUploadModal)
+    return () => {
+      window.removeEventListener("openUploadModal", handleOpenUploadModal)
+    }
   }, [])
 
   const handleLogout = () => {

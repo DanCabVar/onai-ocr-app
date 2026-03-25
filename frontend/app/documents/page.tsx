@@ -20,6 +20,7 @@ import {
   ExternalLink,
   FileSearch,
   CalendarDays,
+  Upload,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -227,11 +228,22 @@ export default function DocumentsPage() {
     <div className="h-[calc(100vh-4rem)] overflow-y-auto">
       <div className="p-4 sm:p-6 space-y-6 max-w-[1400px] mx-auto">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-semibold font-primary tracking-tight">Documentos</h1>
-          <p className="text-sm text-muted-foreground font-secondary mt-1">
-            Gestiona y consulta todos los documentos procesados
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold font-primary tracking-tight">Documentos</h1>
+            <p className="text-sm text-muted-foreground font-secondary mt-1">
+              Gestiona y consulta todos los documentos procesados
+            </p>
+          </div>
+          <Button
+            className="rounded-full gap-2"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("openUploadModal"))
+            }}
+          >
+            <Upload className="h-4 w-4" />
+            Subir Documento
+          </Button>
         </div>
 
         {/* Unauthenticated Banner */}
