@@ -148,16 +148,11 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
     setProgressMessage('Iniciando procesamiento...')
 
     try {
-      // Use progress-aware method that tries SSE first, falls back to standard POST
-      const progressInterval = setInterval(() => {
-        setProgress(prev => Math.min(prev + 2, 90))
-      }, 3000)
-
       const result = await documentTypeInferenceService.inferFromSamplesWithProgress(
         files,
         uploadSamples,
         (event: ProgressEvent) => {
-          // Real-time progress from the processor
+          // Real-time progress from polling
           if (event.progress_pct > 0) {
             setProgress(event.progress_pct)
           }
@@ -167,7 +162,6 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
         },
       )
 
-      clearInterval(progressInterval)
       setProgress(100)
       setProgressMessage('Completado')
 

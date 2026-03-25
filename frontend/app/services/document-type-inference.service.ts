@@ -37,26 +37,29 @@ export interface ProgressEvent {
   message: string;
 }
 
+export interface JobStatusResponse {
+  jobId: string;
+  status: 'processing' | 'completed' | 'failed';
+  step: string;
+  progress: number;
+  message: string;
+  results?: InferFromSamplesResponse;
+  error?: string;
+}
+
+const POLL_INTERVAL_MS = 2000;
+
 class DocumentTypeInferenceService {
   /**
-   * Infiere tipos de documento desde archivos de ejemplo.
-   * Uses the standard POST endpoint (NestJS proxies to Python processor).
+   * Starts the inference job and returns the jobId.
    */
-  async inferFromSamples(
+  private async startJob(
     files: File[],
-    uploadSamples: boolean = false
-  ): Promise<InferFromSamplesResponse> {
+    uploadSamples: boolean,
+  ): Promise<string> {
     const token = localStorage.getItem('auth_token');
     if (!token) {
       throw new Error('No hay token de autenticación');
-    }
-
-    if (!files || files.length < 2) {
-      throw new Error('Se requieren al menos 2 archivos');
-    }
-
-    if (files.length > 10) {
-      throw new Error('Máximo 10 archivos permitidos');
     }
 
     const formData = new FormData();
@@ -64,7 +67,7 @@ class DocumentTypeInferenceService {
       formData.append('files', file);
     });
 
-    const response = await axios.post<InferFromSamplesResponse>(
+    const response = await axios.post<{ jobId: string; status: string }>(
       `${API_URL}/document-types/infer-from-samples?uploadSamples=${uploadSamples}`,
       formData,
       {
@@ -72,20 +75,51 @@ class DocumentTypeInferenceService {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'multipart/form-data',
         },
-        timeout: 900000, // 15 minutes
-      }
+        timeout: 60000, // 60s is plenty — the POST returns immediately now
+      },
+    );
+
+    return response.data.jobId;
+  }
+
+  /**
+   * Polls job status.
+   */
+  private async getJobStatus(jobId: string): Promise<JobStatusResponse> {
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+      throw new Error('No hay token de autenticación');
+    }
+
+    const response = await axios.get<JobStatusResponse>(
+      `${API_URL}/document-types/jobs/${jobId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        timeout: 10000,
+      },
     );
 
     return response.data;
   }
 
   /**
-   * Infiere tipos con progreso en tiempo real via SSE.
-   * Calls the Python processor's /process-batch-stream endpoint directly
-   * for real-time progress updates.
+   * Infiere tipos de documento desde archivos de ejemplo.
+   * POST → get jobId → poll GET every 2s → return results.
+   */
+  async inferFromSamples(
+    files: File[],
+    uploadSamples: boolean = false,
+  ): Promise<InferFromSamplesResponse> {
+    return this.inferFromSamplesWithProgress(files, uploadSamples);
+  }
+
+  /**
+   * Infiere tipos con progreso en tiempo real via polling.
    *
    * @param files - Array of files (2-10)
-   * @param uploadSamples - Whether to upload sample files to Drive
+   * @param uploadSamples - Whether to upload sample files
    * @param onProgress - Callback for progress updates
    * @returns Final response with created types
    */
@@ -94,125 +128,58 @@ class DocumentTypeInferenceService {
     uploadSamples: boolean = false,
     onProgress?: (event: ProgressEvent) => void,
   ): Promise<InferFromSamplesResponse> {
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
-      throw new Error('No hay token de autenticación');
-    }
-
     if (!files || files.length < 2) {
       throw new Error('Se requieren al menos 2 archivos');
     }
 
-    // Try SSE streaming first, fallback to standard POST
-    try {
-      return await this._streamFromProcessor(files, uploadSamples, onProgress);
-    } catch (sseError) {
-      console.warn('SSE streaming failed, falling back to standard POST:', sseError);
-      return this.inferFromSamples(files, uploadSamples);
-    }
-  }
-
-  private async _streamFromProcessor(
-    files: File[],
-    uploadSamples: boolean,
-    onProgress?: (event: ProgressEvent) => void,
-  ): Promise<InferFromSamplesResponse> {
-    const token = localStorage.getItem('auth_token');
-
-    // Build the form data for the SSE endpoint
-    // This goes through the NestJS backend which proxies to the processor
-    const formData = new FormData();
-    formData.append('user_id', '1'); // Will be overridden by JWT user
-    formData.append('upload_samples', String(uploadSamples));
-    files.forEach((file) => {
-      formData.append('files', file);
-    });
-
-    // Use fetch for SSE (axios doesn't support streaming well)
-    const response = await fetch(
-      `${API_URL}/document-types/infer-from-samples?uploadSamples=${uploadSamples}`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        body: formData,
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    if (files.length > 10) {
+      throw new Error('Máximo 10 archivos permitidos');
     }
 
-    // If the response is SSE (text/event-stream), parse events
-    const contentType = response.headers.get('content-type') || '';
+    // Step 1: Start the job
+    const jobId = await this.startJob(files, uploadSamples);
 
-    if (contentType.includes('text/event-stream')) {
-      return this._parseSSEResponse(response, onProgress);
-    }
+    // Step 2: Poll for status
+    return new Promise<InferFromSamplesResponse>((resolve, reject) => {
+      const poll = async () => {
+        try {
+          const status = await this.getJobStatus(jobId);
 
-    // Standard JSON response (fallback)
-    return response.json();
-  }
-
-  private async _parseSSEResponse(
-    response: Response,
-    onProgress?: (event: ProgressEvent) => void,
-  ): Promise<InferFromSamplesResponse> {
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No readable stream available');
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let finalResult: InferFromSamplesResponse | null = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      let eventType = '';
-      let eventData = '';
-
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          eventType = line.slice(7).trim();
-        } else if (line.startsWith('data: ')) {
-          eventData = line.slice(6);
-        } else if (line === '' && eventData) {
-          // End of event
-          try {
-            const parsed = JSON.parse(eventData);
-
-            if (eventType === 'progress' && onProgress) {
-              onProgress(parsed as ProgressEvent);
-            } else if (eventType === 'complete') {
-              finalResult = parsed as InferFromSamplesResponse;
-            } else if (eventType === 'error') {
-              throw new Error(parsed.error || 'Error en el procesamiento');
-            }
-          } catch (parseError) {
-            if (eventType === 'error') throw parseError;
-            console.warn('Failed to parse SSE event:', eventData);
+          // Report progress
+          if (onProgress) {
+            onProgress({
+              step: status.step,
+              progress_pct: status.progress,
+              message: status.message,
+            });
           }
 
-          eventType = '';
-          eventData = '';
+          if (status.status === 'completed' && status.results) {
+            resolve(status.results);
+            return;
+          }
+
+          if (status.status === 'failed') {
+            reject(new Error(status.error || 'Error en el procesamiento'));
+            return;
+          }
+
+          // Still processing — poll again
+          setTimeout(poll, POLL_INTERVAL_MS);
+        } catch (error: any) {
+          // Network errors during polling — retry a few times
+          if (error.code === 'ECONNABORTED' || error.response?.status >= 500) {
+            console.warn('Poll error, retrying...', error.message);
+            setTimeout(poll, POLL_INTERVAL_MS * 2);
+            return;
+          }
+          reject(error);
         }
-      }
-    }
+      };
 
-    if (finalResult) {
-      return finalResult;
-    }
-
-    throw new Error('Stream ended without a complete event');
+      // Start polling after a short delay (give backend time to start)
+      setTimeout(poll, 1000);
+    });
   }
 }
 

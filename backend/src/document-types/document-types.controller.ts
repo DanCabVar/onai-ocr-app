@@ -11,6 +11,7 @@ import {
   UseInterceptors,
   UploadedFiles,
   BadRequestException,
+  NotFoundException,
   Query,
   Logger,
 } from '@nestjs/common';
@@ -20,6 +21,7 @@ import { CreateDocumentTypeDto } from './dto/create-document-type.dto';
 import { UpdateDocumentTypeDto } from './dto/update-document-type.dto';
 import { InferFromSamplesResponseDto } from './dto/infer-from-samples.dto';
 import { DocumentTypeInferenceService } from './services/document-type-inference.service';
+import { InferenceJobStore } from './services/inference-job.store';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../database/entities/user.entity';
@@ -32,6 +34,7 @@ export class DocumentTypesController {
   constructor(
     private readonly documentTypesService: DocumentTypesService,
     private readonly inferenceService: DocumentTypeInferenceService,
+    private readonly jobStore: InferenceJobStore,
   ) {}
 
   @Post()
@@ -45,6 +48,15 @@ export class DocumentTypesController {
   @Get()
   findAll(@CurrentUser() user: User) {
     return this.documentTypesService.findAll(user);
+  }
+
+  @Get('jobs/:jobId')
+  getJobStatus(@Param('jobId') jobId: string) {
+    const job = this.jobStore.getJob(jobId);
+    if (!job) {
+      throw new NotFoundException(`Job ${jobId} no encontrado`);
+    }
+    return job;
   }
 
   @Get(':id')
@@ -67,8 +79,9 @@ export class DocumentTypesController {
   }
 
   /**
-   * Nuevo endpoint: Inferir tipos de documento desde documentos de ejemplo
-   * Permite subir hasta 10 archivos para crear tipos automáticamente
+   * Endpoint async: Inferir tipos de documento desde documentos de ejemplo.
+   * Retorna inmediatamente un jobId. El procesamiento corre en background.
+   * Usar GET /document-types/jobs/:jobId para consultar el estado.
    */
   @Post('infer-from-samples')
   @UseInterceptors(
@@ -77,7 +90,6 @@ export class DocumentTypesController {
         fileSize: 10 * 1024 * 1024, // 10MB por archivo
       },
       fileFilter: (req, file, callback) => {
-        // Validar tipos de archivo permitidos
         const allowedMimeTypes = [
           'application/pdf',
           'image/png',
@@ -102,7 +114,7 @@ export class DocumentTypesController {
     @UploadedFiles() files: Express.Multer.File[],
     @CurrentUser() user: User,
     @Query('uploadSamples') uploadSamples?: string,
-  ): Promise<InferFromSamplesResponseDto> {
+  ): Promise<{ jobId: string; status: string }> {
     // Validaciones
     if (!files || files.length === 0) {
       throw new BadRequestException('Debes subir al menos 2 archivos');
@@ -116,28 +128,54 @@ export class DocumentTypesController {
       throw new BadRequestException('Máximo 10 archivos permitidos');
     }
 
-    // Convertir query param a boolean
     const shouldUploadSamples = uploadSamples === 'true';
 
+    // Create job and return immediately
+    const jobId = this.jobStore.createJob();
+
+    // Copy file buffers before the request ends (Express may free them)
+    const filesCopy = files.map((f) => ({
+      ...f,
+      buffer: Buffer.from(f.buffer),
+    }));
+
+    // Run processing in background — don't await
+    this.runInferenceJob(jobId, filesCopy, user, shouldUploadSamples);
+
+    return { jobId, status: 'processing' };
+  }
+
+  /**
+   * Runs the inference pipeline in background, updating job state.
+   */
+  private async runInferenceJob(
+    jobId: string,
+    files: Express.Multer.File[],
+    user: User,
+    uploadSamples: boolean,
+  ): Promise<void> {
     try {
       const createdTypes = await this.inferenceService.inferDocumentTypesFromSamples(
         files,
         user,
-        shouldUploadSamples,
+        uploadSamples,
+        (step, progress, message) => {
+          this.jobStore.updateProgress(jobId, step as any, progress, message);
+        },
       );
 
-      return {
+      const result: InferFromSamplesResponseDto = {
         success: true,
         message: `${createdTypes.length} tipo(s) de documento creado(s) exitosamente`,
         createdTypes,
         totalDocumentsProcessed: files.length,
         totalTypesCreated: createdTypes.length,
       };
-    } catch (error) {
-      throw new BadRequestException(
-        `Error al inferir tipos de documento: ${error.message}`,
-      );
+
+      this.jobStore.completeJob(jobId, result);
+    } catch (error: any) {
+      this.logger.error(`Job ${jobId} failed: ${error.message}`, error.stack);
+      this.jobStore.failJob(jobId, error.message || 'Error desconocido');
     }
   }
 }
-

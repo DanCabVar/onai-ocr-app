@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DocumentTypesService } from './document-types.service';
 import { DocumentTypeInferenceService } from './services/document-type-inference.service';
+import { InferenceJobStore } from './services/inference-job.store';
 import { DocumentTypesController } from './document-types.controller';
 import { DocumentType } from '../database/entities/document-type.entity';
 import { Document } from '../database/entities/document.entity';
@@ -22,6 +23,7 @@ import { DocumentsModule } from '../documents/documents.module';
   providers: [
     DocumentTypesService,
     DocumentTypeInferenceService,
+    InferenceJobStore,
   ],
   exports: [DocumentTypesService],
 })

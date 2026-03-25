@@ -620,6 +620,7 @@ JSON only, sin texto adicional.`;
     files: Express.Multer.File[],
     user: User,
     uploadSamples: boolean = false,
+    onProgress?: (step: string, progress: number, message: string) => void,
   ): Promise<CreatedDocumentType[]> {
     const startTime = Date.now();
     this.logger.log(`🚀 Iniciando pipeline de inferencia: ${files.length} documentos`);
@@ -633,19 +634,30 @@ JSON only, sin texto adicional.`;
     // Load existing types for matching
     const existingTypes = await this.documentTypeRepository.find();
 
+    const reportProgress = (step: string, progress: number, message: string) => {
+      if (onProgress) onProgress(step, progress, message);
+    };
+
     // ─── STEP 1: OCR ───
+    reportProgress('ocr', 5, 'Iniciando OCR...');
     const ocrDocs = await this.step1_OCR(uniqueFiles);
+    reportProgress('ocr', 30, `OCR completado: ${ocrDocs.filter(d => !d.error).length}/${uniqueFiles.length} docs`);
 
     // ─── STEP 2: Classify ───
+    reportProgress('classifying', 35, 'Clasificando documentos...');
     const classifiedDocs = await this.step2_Classify(ocrDocs);
+    reportProgress('classifying', 50, 'Clasificación completada');
 
     // ─── STEP 3: Homologate ───
+    reportProgress('homologating', 55, 'Homologando tipos...');
     const groups = await this.step3_Homologate(classifiedDocs, existingTypes);
 
     if (groups.length === 0) {
       this.logger.warn(`⚠️  No se pudieron clasificar documentos`);
+      reportProgress('done', 100, 'No se pudieron clasificar documentos');
       return [];
     }
+    reportProgress('homologating', 60, `${groups.length} grupo(s) identificado(s)`);
 
     // ─── STEPS 4-6: Per group ───
     const results: CreatedDocumentType[] = [];
@@ -655,9 +667,11 @@ JSON only, sin texto adicional.`;
         this.logger.log(`\n📦 Procesando grupo "${group.canonicalName}" (${group.docs.length} docs)...`);
 
         // STEP 4: Consolidate schema
+        reportProgress('consolidating', 65, `Consolidando schema: "${group.canonicalName}"...`);
         const consolidated = await this.step4_ConsolidateSchema(group.canonicalName, group.docs);
 
         // STEP 5: Re-extract with unified schema
+        reportProgress('extracting', 75, `Re-extrayendo datos: "${group.canonicalName}"...`);
         const reExtracted = await this.step5_ReExtract(
           group.docs,
           consolidated.consolidatedFields,
@@ -665,6 +679,7 @@ JSON only, sin texto adicional.`;
         );
 
         // STEP 6: Save to DB + R2
+        reportProgress('saving', 90, `Guardando "${group.canonicalName}" en sistema...`);
         const result = await this.step6_Save(group, consolidated, reExtracted, user, uploadSamples);
         if (result) {
           results.push(result);
