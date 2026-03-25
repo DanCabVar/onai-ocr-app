@@ -25,6 +25,27 @@ export interface ProcessingResult {
   message: string;
 }
 
+export interface BatchDocResult {
+  filename: string;
+  status: 'processed' | 'pending_confirmation' | 'error';
+  documentId?: number;
+  documentTypeId?: number;
+  documentTypeName?: string;
+  suggestedType?: string;
+  confidence?: number;
+  ocrText?: string;
+  extractedData?: any;
+  error?: string;
+}
+
+export interface BatchUploadResult {
+  total: number;
+  processed: number;
+  pendingConfirmation: number;
+  errors: number;
+  results: BatchDocResult[];
+}
+
 /**
  * Document Processing Pipeline (Optimized)
  * 
@@ -475,5 +496,562 @@ export class DocumentProcessingService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BATCH PROCESSING
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Run promises with a concurrency limit using Promise.allSettled semantics.
+   */
+  private async runWithConcurrency<T>(
+    items: T[],
+    concurrency: number,
+    fn: (item: T) => Promise<any>,
+  ): Promise<PromiseSettledResult<any>[]> {
+    const results: PromiseSettledResult<any>[] = [];
+    for (let i = 0; i < items.length; i += concurrency) {
+      const batch = items.slice(i, i + concurrency);
+      const batchResults = await Promise.allSettled(batch.map(fn));
+      results.push(...batchResults);
+    }
+    return results;
+  }
+
+  /**
+   * Process multiple documents in batch.
+   *
+   * Flow:
+   * 1. Validate all files
+   * 2. OCR in parallel (max 3)
+   * 3. Classify each doc against user types (max 5)
+   * 4. Matched docs → extract + save
+   * 5. Unmatched docs → return as pending_confirmation
+   * 6. If 5+ docs, apply type grouping/homogenization
+   */
+  async processBatch(
+    files: Express.Multer.File[],
+    user: User,
+  ): Promise<BatchUploadResult> {
+    this.logger.log(`📦 Batch: procesando ${files.length} archivos para usuario ${user.id}`);
+
+    // ─── PASO 1: Validar todos los archivos ───
+    for (const file of files) {
+      this.validateFile(file.buffer, file.mimetype, file.originalname);
+    }
+
+    // ─── PASO 2: Upload originals to R2 + OCR in parallel (max 3) ───
+    interface OcrItem {
+      file: Express.Multer.File;
+      ocrText: string;
+      storageKey: string;
+    }
+
+    const ocrResults = await this.runWithConcurrency(files, 3, async (file) => {
+      // Upload original
+      const storageKey = this.storageService.buildKey(user.id, 'originals', file.originalname);
+      await this.storageService.uploadFile(file.buffer, storageKey, file.mimetype);
+
+      // Presigned URL for OCR
+      const presignedUrl = await this.storageService.getPresignedUrl(storageKey, 600);
+
+      // OCR (with cache)
+      const contentHash = this.ocrCache.computeHash(file.buffer);
+      let ocr = await this.ocrCache.get(contentHash);
+      if (!ocr) {
+        const freshOCR = await this.mistralOCRService.extractTextSmart(presignedUrl, file.mimetype);
+        ocr = { text: freshOCR.text, confidence: freshOCR.confidence, metadata: freshOCR.metadata };
+        this.ocrCache.set(contentHash, ocr);
+      }
+
+      return { file, ocrText: ocr.text, storageKey } as OcrItem;
+    });
+
+    // Separate successful OCRs from failures
+    const ocrSuccesses: OcrItem[] = [];
+    const batchResults: BatchDocResult[] = [];
+
+    for (let i = 0; i < ocrResults.length; i++) {
+      const r = ocrResults[i];
+      if (r.status === 'fulfilled') {
+        ocrSuccesses.push(r.value);
+      } else {
+        batchResults.push({
+          filename: files[i].originalname,
+          status: 'error',
+          error: r.reason?.message || 'OCR failed',
+        });
+      }
+    }
+
+    if (ocrSuccesses.length === 0) {
+      return {
+        total: files.length,
+        processed: 0,
+        pendingConfirmation: 0,
+        errors: batchResults.length,
+        results: batchResults,
+      };
+    }
+
+    // ─── PASO 3: Load user types ───
+    const availableTypes = await this.getAvailableTypes(user.id);
+
+    // ─── PASO 4: Classify each doc (max 5 in parallel) ───
+    interface ClassifiedItem extends OcrItem {
+      classification: import('../../ai-services/gemini-classifier.service').ClassifyAndExtractResult;
+    }
+
+    const classifyResults = await this.runWithConcurrency(ocrSuccesses, 5, async (item) => {
+      const classification = await this.geminiClassifierService.classifyAndExtract(
+        item.file.buffer,
+        item.file.mimetype,
+        availableTypes,
+      );
+      return { ...item, classification } as ClassifiedItem;
+    });
+
+    const classifiedItems: ClassifiedItem[] = [];
+    for (let i = 0; i < classifyResults.length; i++) {
+      const r = classifyResults[i];
+      if (r.status === 'fulfilled') {
+        classifiedItems.push(r.value);
+      } else {
+        batchResults.push({
+          filename: ocrSuccesses[i].file.originalname,
+          status: 'error',
+          error: r.reason?.message || 'Classification failed',
+        });
+      }
+    }
+
+    // ─── PASO 5: Separate matched vs unmatched ───
+    const matched: ClassifiedItem[] = [];
+    const unmatched: ClassifiedItem[] = [];
+
+    for (const item of classifiedItems) {
+      const c = item.classification.classification;
+      if (c.isOthers) {
+        unmatched.push(item);
+      } else {
+        // Verify the matched type actually exists
+        const matchedType = availableTypes.find(
+          (t) => t.name.toLowerCase().trim() === c.documentTypeName.toLowerCase().trim(),
+        ) || availableTypes.find((t) => {
+          const n = t.name.toLowerCase().trim();
+          const cn = c.documentTypeName.toLowerCase().trim();
+          return n.includes(cn) || cn.includes(n);
+        });
+
+        if (matchedType) {
+          matched.push(item);
+        } else {
+          unmatched.push(item);
+        }
+      }
+    }
+
+    // ─── PASO 5a: If 5+ docs, apply grouping/homogenization for unmatched ───
+    if (unmatched.length >= 5) {
+      await this.homogenizeAndGroupBatch(unmatched, batchResults, user);
+    } else {
+      // Return unmatched as pending_confirmation
+      for (const item of unmatched) {
+        const c = item.classification.classification;
+        const inferredData = item.classification.inferredData;
+
+        // Save doc with status pending_confirmation
+        const viewUrl = await this.storageService.getPresignedUrl(item.storageKey, 7 * 24 * 3600);
+        const document = this.documentRepository.create({
+          userId: user.id,
+          documentTypeId: null,
+          filename: item.file.originalname,
+          storageKey: item.storageKey,
+          storageProvider: 'r2',
+          googleDriveLink: viewUrl,
+          googleDriveFileId: null,
+          ocrRawText: item.ocrText,
+          extractedData: null,
+          inferredData: inferredData || {
+            inferred_type: c.inferredType || 'Desconocido',
+            summary: 'Pendiente de confirmación',
+            key_fields: [],
+          },
+          confidenceScore: c.confidence,
+          status: 'pending_confirmation',
+        });
+        await this.documentRepository.save(document);
+
+        batchResults.push({
+          filename: item.file.originalname,
+          status: 'pending_confirmation',
+          documentId: document.id,
+          suggestedType: c.inferredType || inferredData?.inferred_type || 'Desconocido',
+          confidence: c.confidence,
+        });
+      }
+    }
+
+    // ─── PASO 6: Process matched docs (extract + save, max 3 parallel) ───
+    const extractResults = await this.runWithConcurrency(matched, 3, async (item) => {
+      const c = item.classification.classification;
+      const matchedType = availableTypes.find(
+        (t) => t.name.toLowerCase().trim() === c.documentTypeName.toLowerCase().trim(),
+      ) || availableTypes.find((t) => {
+        const n = t.name.toLowerCase().trim();
+        const cn = c.documentTypeName.toLowerCase().trim();
+        return n.includes(cn) || cn.includes(n);
+      });
+
+      const extractedData = item.classification.extraction || { summary: 'Sin resumen', fields: [] };
+
+      // Save extracted JSON to R2
+      const extractedKey = this.storageService.buildKey(
+        user.id,
+        'extracted',
+        `${Date.now()}-${item.file.originalname.replace(/\.[^.]+$/, '')}.json`,
+      );
+      await this.storageService.uploadFile(
+        Buffer.from(JSON.stringify(extractedData, null, 2)),
+        extractedKey,
+        'application/json',
+      );
+
+      // Also copy to typed storage path
+      const typedKey = this.storageService.buildTypedKey(
+        user.id,
+        matchedType!.name,
+        item.file.originalname,
+      );
+      await this.storageService.uploadFile(item.file.buffer, typedKey, item.file.mimetype);
+
+      const viewUrl = await this.storageService.getPresignedUrl(item.storageKey, 7 * 24 * 3600);
+
+      const document = this.documentRepository.create({
+        userId: user.id,
+        documentTypeId: matchedType!.id,
+        filename: item.file.originalname,
+        storageKey: item.storageKey,
+        storageProvider: 'r2',
+        googleDriveLink: viewUrl,
+        googleDriveFileId: null,
+        ocrRawText: item.ocrText,
+        extractedData,
+        inferredData: null,
+        confidenceScore: c.confidence,
+        status: 'completed',
+      });
+      await this.documentRepository.save(document);
+      await this.subscriptionsService.incrementUsage(user.id);
+
+      return {
+        filename: item.file.originalname,
+        status: 'processed' as const,
+        documentId: document.id,
+        documentTypeId: matchedType!.id,
+        documentTypeName: matchedType!.name,
+        confidence: c.confidence,
+        extractedData,
+      } as BatchDocResult;
+    });
+
+    for (const r of extractResults) {
+      if (r.status === 'fulfilled') {
+        batchResults.push(r.value);
+      } else {
+        // Find the original filename
+        const idx = extractResults.indexOf(r);
+        batchResults.push({
+          filename: matched[idx]?.file?.originalname || 'unknown',
+          status: 'error',
+          error: r.reason?.message || 'Extraction failed',
+        });
+      }
+    }
+
+    const processed = batchResults.filter((r) => r.status === 'processed').length;
+    const pending = batchResults.filter((r) => r.status === 'pending_confirmation').length;
+    const errors = batchResults.filter((r) => r.status === 'error').length;
+
+    this.logger.log(`✅ Batch completo: ${processed} procesados, ${pending} pendientes, ${errors} errores`);
+
+    return {
+      total: files.length,
+      processed,
+      pendingConfirmation: pending,
+      errors,
+      results: batchResults,
+    };
+  }
+
+  /**
+   * Homogenize type names and group docs for large batches (5+ unmatched).
+   * Uses Gemini to consolidate similar type names, then extracts with unified schema.
+   */
+  private async homogenizeAndGroupBatch(
+    items: Array<{
+      file: Express.Multer.File;
+      ocrText: string;
+      storageKey: string;
+      classification: import('../../ai-services/gemini-classifier.service').ClassifyAndExtractResult;
+    }>,
+    batchResults: BatchDocResult[],
+    user: User,
+  ): Promise<void> {
+    // Group by inferred type
+    const typeGroups = new Map<string, typeof items>();
+    for (const item of items) {
+      const typeName =
+        item.classification.classification.inferredType ||
+        item.classification.inferredData?.inferred_type ||
+        'Desconocido';
+      if (!typeGroups.has(typeName)) {
+        typeGroups.set(typeName, []);
+      }
+      typeGroups.get(typeName)!.push(item);
+    }
+
+    // If multiple type names, try to homogenize
+    const typeNames = Array.from(typeGroups.keys());
+    let homogenizedGroups = typeGroups;
+
+    if (typeNames.length > 1) {
+      try {
+        // Use Gemini to find equivalences
+        const genAI = new (await import('@google/generative-ai')).GoogleGenerativeAI(
+          process.env.GOOGLE_AI_API_KEY || '',
+        );
+        const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-2.5-flash' });
+
+        const prompt = `Given these document type names, group equivalent ones and return a canonical name for each group.
+Types: ${JSON.stringify(typeNames)}
+Return JSON: {"merges":[{"canonical":"Name","variants":["name1","name2"]}]}
+If no merges needed, return {"merges":[]}. JSON only.`;
+
+        const result = await model.generateContent(prompt);
+        const response = result.response.text();
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.merges?.length > 0) {
+            homogenizedGroups = new Map<string, typeof items>();
+            const merged = new Set<string>();
+
+            for (const merge of parsed.merges) {
+              const allItems: typeof items = [];
+              for (const variant of merge.variants || []) {
+                if (typeGroups.has(variant)) {
+                  allItems.push(...typeGroups.get(variant)!);
+                  merged.add(variant);
+                }
+              }
+              if (allItems.length > 0) {
+                homogenizedGroups.set(merge.canonical, allItems);
+              }
+            }
+            // Add non-merged groups
+            for (const [name, groupItems] of typeGroups) {
+              if (!merged.has(name)) {
+                homogenizedGroups.set(name, groupItems);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        this.logger.warn(`Homogenization failed, using original groups: ${e.message}`);
+      }
+    }
+
+    // Process each group: save as pending_confirmation but with grouped info
+    for (const [typeName, groupItems] of homogenizedGroups) {
+      for (const item of groupItems) {
+        const inferredData = item.classification.inferredData || {
+          inferred_type: typeName,
+          summary: 'Pendiente de confirmación (batch)',
+          key_fields: item.classification.extraction?.fields || [],
+        };
+        // Override type name with homogenized version
+        inferredData.inferred_type = typeName;
+
+        const viewUrl = await this.storageService.getPresignedUrl(item.storageKey, 7 * 24 * 3600);
+        const document = this.documentRepository.create({
+          userId: user.id,
+          documentTypeId: null,
+          filename: item.file.originalname,
+          storageKey: item.storageKey,
+          storageProvider: 'r2',
+          googleDriveLink: viewUrl,
+          googleDriveFileId: null,
+          ocrRawText: item.ocrText,
+          extractedData: null,
+          inferredData,
+          confidenceScore: item.classification.classification.confidence,
+          status: 'pending_confirmation',
+        });
+        await this.documentRepository.save(document);
+
+        batchResults.push({
+          filename: item.file.originalname,
+          status: 'pending_confirmation',
+          documentId: document.id,
+          suggestedType: typeName,
+          confidence: item.classification.classification.confidence,
+        });
+      }
+    }
+  }
+
+  /**
+   * Confirm or cancel a pending document type.
+   */
+  async confirmDocumentType(
+    documentId: number,
+    action: 'create_type' | 'cancel',
+    user: User,
+    typeName?: string,
+  ): Promise<{ success: boolean; message: string; document?: any; documentType?: any }> {
+    const document = await this.documentRepository.findOne({
+      where: { id: documentId, userId: user.id },
+    });
+
+    if (!document) {
+      throw new BadRequestException('Documento no encontrado');
+    }
+
+    if (document.status !== 'pending_confirmation') {
+      throw new BadRequestException(
+        `El documento no está pendiente de confirmación (status: ${document.status})`,
+      );
+    }
+
+    if (action === 'cancel') {
+      // Delete from R2
+      if (document.storageKey) {
+        try {
+          await this.storageService.deleteFile(document.storageKey);
+        } catch (e) {
+          this.logger.warn(`Error deleting from R2: ${e.message}`);
+        }
+      }
+      await this.documentRepository.remove(document);
+      return {
+        success: true,
+        message: `Documento "${document.filename}" eliminado`,
+      };
+    }
+
+    // action === 'create_type'
+    const finalTypeName =
+      typeName || document.inferredData?.inferred_type || 'Tipo Sin Nombre';
+
+    // Check if type already exists
+    let documentType = await this.documentTypeRepository.findOne({
+      where: { name: finalTypeName, userId: user.id },
+    });
+
+    if (!documentType) {
+      // Build field schema from inferred data
+      const inferredFields = document.inferredData?.key_fields || [];
+      const fields = inferredFields.map((f: any) => ({
+        name: f.name,
+        type: this.normalizeFieldType(f.type || 'string'),
+        label: f.label || f.name,
+        required: f.required || false,
+        description: f.description || '',
+      }));
+
+      documentType = this.documentTypeRepository.create({
+        userId: user.id,
+        name: finalTypeName,
+        description: document.inferredData?.summary || `Tipo "${finalTypeName}" creado desde batch`,
+        fieldSchema: { fields },
+        googleDriveFolderId: null,
+        folderPath: null,
+      });
+      await this.documentTypeRepository.save(documentType);
+      this.invalidateTypesCache();
+      this.logger.log(`✅ Tipo "${finalTypeName}" creado (ID: ${documentType.id})`);
+    }
+
+    // Now extract data using the type schema
+    let extractedData: any = null;
+    try {
+      if (document.storageKey) {
+        const fileBuffer = await this.storageService.downloadFile(document.storageKey);
+        const mimeType = document.filename.toLowerCase().endsWith('.pdf')
+          ? 'application/pdf'
+          : 'image/jpeg';
+        extractedData = await this.geminiClassifierService.extractDataWithVision(
+          fileBuffer,
+          mimeType,
+          documentType,
+        );
+      } else if (document.ocrRawText) {
+        extractedData = await this.geminiClassifierService.extractData(
+          document.ocrRawText,
+          documentType,
+        );
+      }
+    } catch (e) {
+      this.logger.warn(`Extraction failed for confirmed doc: ${e.message}`);
+      extractedData = document.inferredData
+        ? { summary: document.inferredData.summary, fields: document.inferredData.key_fields }
+        : null;
+    }
+
+    // Copy to typed storage
+    if (document.storageKey) {
+      try {
+        const fileBuffer = await this.storageService.downloadFile(document.storageKey);
+        const mimeType = document.filename.toLowerCase().endsWith('.pdf')
+          ? 'application/pdf'
+          : 'image/jpeg';
+        const typedKey = this.storageService.buildTypedKey(
+          user.id,
+          finalTypeName,
+          document.filename,
+        );
+        await this.storageService.uploadFile(fileBuffer, typedKey, mimeType);
+      } catch (e) {
+        this.logger.warn(`Typed storage copy failed: ${e.message}`);
+      }
+    }
+
+    // Update document
+    document.documentTypeId = documentType.id;
+    document.extractedData = extractedData;
+    document.status = 'completed';
+    await this.documentRepository.save(document);
+
+    await this.subscriptionsService.incrementUsage(user.id);
+
+    return {
+      success: true,
+      message: `Documento "${document.filename}" confirmado como tipo "${finalTypeName}"`,
+      document: {
+        id: document.id,
+        filename: document.filename,
+        documentTypeId: documentType.id,
+        extractedData,
+        status: 'completed',
+      },
+      documentType: {
+        id: documentType.id,
+        name: documentType.name,
+      },
+    };
+  }
+
+  /**
+   * Normalize field type from AI output to valid FieldDefinition types.
+   */
+  private normalizeFieldType(type: string): 'string' | 'number' | 'date' | 'boolean' | 'array' {
+    const lower = type.toLowerCase().trim();
+    if (['number', 'integer', 'float', 'currency'].includes(lower)) return 'number';
+    if (['date', 'datetime', 'timestamp'].includes(lower)) return 'date';
+    if (['boolean', 'bool'].includes(lower)) return 'boolean';
+    if (['array', 'list'].includes(lower)) return 'array';
+    return 'string';
   }
 }
