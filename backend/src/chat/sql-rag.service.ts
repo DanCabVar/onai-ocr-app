@@ -75,6 +75,12 @@ export class SqlRagService {
         userId,
       );
 
+      // 2b. If no SQL (general question), answer conversationally
+      if (!generatedSql) {
+        const answer = await this.answerGeneral(question, schemaContext);
+        return { answer };
+      }
+
       // 3. Validate the SQL
       this.validateSql(generatedSql);
 
@@ -230,10 +236,8 @@ Responde SOLO con la query SQL, sin backticks, sin explicaciones, sin markdown. 
     const response = result.response.text().trim();
 
     if (response === 'NO_SQL' || response.startsWith('NO_SQL')) {
-      throw new BadRequestException(
-        'No pude traducir tu pregunta a una consulta sobre documentos. ' +
-          'Intenta preguntar sobre tus datos extraídos, tipos de documento o estadísticas.',
-      );
+      // Not a data query — answer as a general assistant instead
+      return null;
     }
 
     // Clean up: remove markdown fences if present
@@ -332,6 +336,34 @@ Responde SOLO con la query SQL, sin backticks, sin explicaciones, sin markdown. 
   /**
    * Use Gemini to format the raw query results into a human-readable response.
    */
+  /**
+   * Answer general (non-data) questions about the system.
+   */
+  private async answerGeneral(question: string, schemaContext: string): Promise<string> {
+    const prompt = `Eres un asistente de IA para ONAI OCR, una plataforma de procesamiento inteligente de documentos.
+
+Información del sistema:
+- Los usuarios pueden subir documentos PDF
+- La IA extrae texto con OCR (Mistral), clasifica el tipo de documento y extrae campos clave (Gemini)
+- Los datos extraídos se guardan y se pueden consultar
+- Puedes responder preguntas sobre los datos extraídos de los documentos del usuario
+
+${schemaContext}
+
+El usuario pregunta: "${question}"
+
+Responde de forma amigable y concisa en español. Si preguntan qué puedes hacer, explica que puedes:
+1. Responder preguntas sobre sus documentos procesados (cuántos hay, de qué tipo, datos específicos)
+2. Buscar información en los campos extraídos (montos, fechas, nombres, etc.)
+3. Hacer cálculos sobre los datos (sumas, promedios, conteos por tipo)
+4. Mostrar estadísticas y resúmenes
+
+Si no sabes algo, di que no tienes esa información.`;
+
+    const result = await this.model.generateContent(prompt);
+    return result.response.text().trim();
+  }
+
   private async formatResponse(
     originalQuestion: string,
     sql: string,
