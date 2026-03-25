@@ -56,6 +56,18 @@ export class Subscription {
   @Column({ name: 'period_end', type: 'timestamptz', nullable: true })
   periodEnd: Date;
 
+  /** Stripe customer ID */
+  @Column({ name: 'stripe_customer_id', nullable: true })
+  stripeCustomerId: string;
+
+  /** Stripe subscription ID */
+  @Column({ name: 'stripe_subscription_id', nullable: true })
+  stripeSubscriptionId: string;
+
+  /** Stripe price ID for current plan */
+  @Column({ name: 'stripe_price_id', nullable: true })
+  stripePriceId: string;
+
   /** Whether the subscription is active */
   @Column({ default: true })
   active: boolean;

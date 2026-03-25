@@ -5,7 +5,9 @@ import { AppModule } from './app.module';
 import { MulterExceptionFilter } from './common/filters/multer-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true, // Required for Stripe webhook signature verification
+  });
 
   const configService = app.get(ConfigService);
 

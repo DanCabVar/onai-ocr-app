@@ -67,6 +67,13 @@ services:
       # Document Processor (Python microservice)
 
 
+      # Stripe (subscriptions)
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - STRIPE_PRICE_STARTER=${STRIPE_PRICE_STARTER:-}
+      - STRIPE_PRICE_PRO=${STRIPE_PRICE_PRO:-}
+      - STRIPE_PRICE_ENTERPRISE=${STRIPE_PRICE_ENTERPRISE:-}
+      
       # Optional
       - OTHERS_FOLDER_NAME=${OTHERS_FOLDER_NAME:-Otros Documentos}
       - OTHERS_FOLDER_DESCRIPTION=${OTHERS_FOLDER_DESCRIPTION:-Documentos sin clasificación automática}
