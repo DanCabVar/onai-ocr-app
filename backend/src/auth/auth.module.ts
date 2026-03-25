@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { User } from '../database/entities/user.entity';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { User } from '../database/entities/user.entity';
         },
       }),
     }),
-    // EmailModule is @Global — no explicit import needed
+    EmailModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
