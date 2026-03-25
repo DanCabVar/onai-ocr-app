@@ -49,6 +49,7 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
   const [errorMessage, setErrorMessage] = useState<string>("")
   const [result, setResult] = useState<any>(null)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [uploadPercent, setUploadPercent] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
@@ -113,20 +114,21 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
     try {
       setStage("uploading")
       setErrorMessage("")
+      setUploadPercent(0)
 
-      const stages: UploadStage[] = ["uploading", "ocr", "classification", "extraction"]
-      let currentStageIndex = 0
+      // Track real upload progress; once the file is fully sent we
+      // simulate the server-side processing stages.
+      const response = await documentsService.upload(selectedFile, (percent) => {
+        setUploadPercent(percent)
+      })
 
-      const progressInterval = setInterval(() => {
-        currentStageIndex++
-        if (currentStageIndex < stages.length) {
-          setStage(stages[currentStageIndex])
-        }
-      }, 2500)
-
-      const response = await documentsService.upload(selectedFile)
-
-      clearInterval(progressInterval)
+      // File fully uploaded — run through processing stages quickly
+      // to give visual feedback (server already processed everything).
+      const processingStages: UploadStage[] = ["ocr", "classification", "extraction"]
+      for (const s of processingStages) {
+        setStage(s)
+        await new Promise((r) => setTimeout(r, 600))
+      }
 
       setStage("success")
       setResult(response)
@@ -160,6 +162,7 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
     setErrorMessage("")
     setResult(null)
     setIsDragOver(false)
+    setUploadPercent(0)
     onOpenChange(false)
   }
 
@@ -245,11 +248,13 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
                 <div className="flex items-center justify-between">
                   <p className={cn("text-sm font-medium", stageConfig.color)}>{stageConfig.label}</p>
                   {isProcessing && (
-                    <span className="text-xs text-muted-foreground">{stageConfig.progress}%</span>
+                    <span className="text-xs text-muted-foreground">
+                      {stage === "uploading" ? `${uploadPercent}%` : `${stageConfig.progress}%`}
+                    </span>
                   )}
                 </div>
                 <Progress
-                  value={stageConfig.progress}
+                  value={stage === "uploading" ? Math.max(uploadPercent * 0.25, 2) : stageConfig.progress}
                   className={cn("h-2 transition-all duration-500", stage === "error" && "[&>div]:bg-red-500")}
                 />
               </div>

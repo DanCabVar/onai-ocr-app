@@ -55,15 +55,26 @@ export const documentsService = {
    * Sube un documento y lo procesa automáticamente
    * (OCR + Clasificación + Extracción)
    */
-  async upload(file: File): Promise<DocumentUploadResponse> {
+  async upload(
+    file: File,
+    onUploadProgress?: (percent: number) => void,
+  ): Promise<DocumentUploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
 
     const response = await apiClient.post<DocumentUploadResponse>('/documents/upload', formData, {
+      // Do NOT set Content-Type manually — axios will set it with the
+      // correct multipart boundary when it detects FormData.
       headers: {
-        'Content-Type': 'multipart/form-data',
+        'Content-Type': undefined as any,
       },
       timeout: 120000, // 2 minutos (el procesamiento puede tardar)
+      onUploadProgress: (progressEvent) => {
+        if (onUploadProgress && progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onUploadProgress(percent);
+        }
+      },
     });
 
     return response.data;
