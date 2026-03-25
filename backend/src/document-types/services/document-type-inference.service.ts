@@ -303,7 +303,7 @@ ${documentsDescription}
    
 5. **Generar label y descripción útiles en español**
 
-6. **Limitar a máximo 20 campos** (los más importantes y comunes)
+6. **Limitar a máximo 30 campos** (los más importantes y comunes)
 
 7. **Ordenar por importancia** (campos más críticos primero)
 

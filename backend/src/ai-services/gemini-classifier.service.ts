@@ -191,7 +191,7 @@ If confidence < ${threshold}, set isOthers=true. JSON only, no other text.`;
 ${typesDesc}
 
 2. Si confidence >= ${threshold}: EXTRAE los campos del tipo coincidente usando su schema exacto.
-3. Si confidence < ${threshold} o no coincide: INFIERE tipo, resumen y campos clave (3-20).
+3. Si confidence < ${threshold} o no coincide: INFIERE tipo, resumen y extrae hasta 30 campos principales del documento, los que consideres relevantes según el contenido. Si el documento es simple, extrae solo los campos que apliquen.
 
 Responde SOLO con JSON:
 {
@@ -379,7 +379,7 @@ For label-value pairs like "Name: John", extract "John". Dates=YYYY-MM-DD, numbe
           const prompt = `Analyze this document image/PDF. Determine:
 1. Document type (e.g. "Certificado Médico", "Factura", "Contrato")
 2. Brief summary in Spanish (1-2 lines)
-3. Key fields (3-20, most important)
+3. Extrae hasta 30 campos principales del documento, los que consideres relevantes según el contenido. Si el documento es simple, extrae solo los campos que apliquen.
 
 Return JSON:
 {"inferred_type":"type name","summary":"summary in Spanish","key_fields":[{"name":"snake_case","type":"string|number|date|email|phone|currency|boolean|array","label":"Spanish Label","required":bool,"description":"brief desc","value":"extracted value"}]}
@@ -427,7 +427,7 @@ Observe layout carefully: extract values next to labels. For amounts, include fu
           await this.rateLimiter.acquire('gemini');
 
           const truncated = ocrText.substring(0, 6000);
-          const prompt = `Analyze this document text. Determine type, summary (Spanish), and key fields (3-20).
+          const prompt = `Analyze this document text. Determine type, summary (Spanish), and extract up to 30 key fields relevant to the document content. If the document is simple, extract only the fields that apply.
 
 Text:
 ${truncated}${ocrText.length > 6000 ? '...(truncated)' : ''}
