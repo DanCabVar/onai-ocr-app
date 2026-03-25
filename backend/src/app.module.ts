@@ -8,6 +8,7 @@ import { DocumentTypesModule } from './document-types/document-types.module';
 import { StorageModule } from './storage/storage.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { StripeModule } from './stripe/stripe.module';
+import { EmailModule } from './email/email.module';
 import { User } from './database/entities/user.entity';
 import { Document } from './database/entities/document.entity';
 import { DocumentType } from './database/entities/document-type.entity';
@@ -44,6 +45,7 @@ import { Subscription } from './database/entities/subscription.entity';
     }),
 
     // Módulos de la aplicación
+    EmailModule,
     AuthModule,
     StorageModule,
     SubscriptionsModule,
