@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { LandingHeader } from "./landing-header"
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.ocr.moti.cl"
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://ocr-app.moti.cl"
 
 /* ═══════════════════════════════ HERO ═══════════════════════════════ */
 function HeroSection() {

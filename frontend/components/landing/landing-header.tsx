@@ -5,7 +5,7 @@ import Link from "next/link"
 import { ScanEye, Menu, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.ocr.moti.cl"
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://ocr-app.moti.cl"
 
 const navLinks = [
   { label: "Características", href: "#features" },

@@ -12,7 +12,7 @@ export default function RootPage() {
 
   useEffect(() => {
     const hostname = window.location.hostname
-    const isAppDomain = hostname === "app.ocr.moti.cl"
+    const isAppDomain = hostname === "ocr-app.moti.cl"
 
     if (isAppDomain) {
       // On app domain, root always goes to dashboard (or login)
@@ -29,7 +29,7 @@ export default function RootPage() {
     const authenticated = authService.isAuthenticated()
     if (authenticated) {
       // If on landing domain but authenticated, redirect to app
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.ocr.moti.cl"
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ocr-app.moti.cl"
       if (hostname === "ocr.moti.cl") {
         window.location.href = `${appUrl}/dashboard`
         return

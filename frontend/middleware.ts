@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 // Routes that only belong on the landing domain (ocr.moti.cl)
 const LANDING_ONLY_ROUTES = ['/', '/pricing', '/terms', '/privacy', '/help'];
 
-// Routes that only belong on the app domain (app.ocr.moti.cl)
+// Routes that only belong on the app domain (ocr-app.moti.cl)
 const APP_ONLY_ROUTES = [
   '/dashboard',
   '/documents',
@@ -22,14 +22,14 @@ function isLandingDomain(hostname: string): boolean {
 }
 
 function isAppDomain(hostname: string): boolean {
-  return hostname === 'app.ocr.moti.cl' || hostname.startsWith('app.ocr.moti.cl:');
+  return hostname === 'ocr-app.moti.cl' || hostname.startsWith('ocr-app.moti.cl:');
 }
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hostname = request.headers.get('host') || '';
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.ocr.moti.cl';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://ocr-app.moti.cl';
   const landingUrl = process.env.NEXT_PUBLIC_LANDING_URL || 'https://ocr.moti.cl';
 
   // Skip API routes and static files

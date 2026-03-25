@@ -44,7 +44,7 @@ export default function LoginPage() {
       })
 
       // Redirect to app domain after login
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.ocr.moti.cl"
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://ocr-app.moti.cl"
       const hostname = window.location.hostname
       if (hostname === "ocr.moti.cl") {
         window.location.href = `${appUrl}/dashboard`
