@@ -2,17 +2,26 @@
 
 import { usePathname } from "next/navigation"
 import { AppSidebar } from "@/components/app-sidebar"
-import { useState, useEffect } from "react"
+import UploadDocumentModal from "@/components/upload-document-modal"
+import { useState, useEffect, useCallback } from "react"
 import { Menu, X } from "lucide-react"
 
 export function ConditionalNavigation({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
 
   // Close sidebar on route change
   useEffect(() => {
     setSidebarOpen(false)
   }, [pathname])
+
+  // Listen for openUploadModal events from any page
+  useEffect(() => {
+    const handler = () => setUploadOpen(true)
+    window.addEventListener("openUploadModal", handler)
+    return () => window.removeEventListener("openUploadModal", handler)
+  }, [])
 
   // Close sidebar on escape key
   useEffect(() => {
@@ -21,6 +30,12 @@ export function ConditionalNavigation({ children }: { children: React.ReactNode 
     }
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
+  }, [])
+
+  const handleUploadSuccess = useCallback(() => {
+    setUploadOpen(false)
+    // Dispatch event so pages can refresh their data
+    window.dispatchEvent(new CustomEvent("documentUploaded"))
   }, [])
 
   const isPublicRoute = pathname === '/login' || pathname === '/register'
@@ -70,6 +85,13 @@ export function ConditionalNavigation({ children }: { children: React.ReactNode 
         <div className="lg:hidden h-14" />
         {children}
       </main>
+
+      {/* Global Upload Modal */}
+      <UploadDocumentModal
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        onUploadSuccess={handleUploadSuccess}
+      />
     </div>
   )
 }
