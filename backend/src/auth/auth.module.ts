@@ -22,10 +22,10 @@ import { User } from '../database/entities/user.entity';
         },
       }),
     }),
+    // EmailModule is @Global — no explicit import needed
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
   exports: [AuthService, JwtStrategy, PassportModule],
 })
 export class AuthModule {}
-

@@ -94,6 +94,17 @@ export class DocumentsController {
     return this.documentsService.uploadBatch(files, user);
   }
 
+  @Post('batch-status')
+  async getBatchStatus(
+    @Body() body: { documentIds: number[] },
+    @CurrentUser() user: User,
+  ) {
+    if (!body.documentIds?.length) {
+      throw new BadRequestException('Se requiere documentIds');
+    }
+    return this.documentsService.getBatchStatus(body.documentIds, user);
+  }
+
   @Post('confirm-type')
   async confirmType(
     @Body() body: { documentId: number; action: 'create_type' | 'cancel'; typeName?: string },
@@ -121,6 +132,14 @@ export class DocumentsController {
   @Get('files')
   async listUserFiles(@CurrentUser() user: User) {
     return this.documentsService.listUserFiles(user);
+  }
+
+  @Get(':id/status')
+  async getDocumentStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
+    return this.documentsService.getDocumentStatus(id, user);
   }
 
   @Get(':id')

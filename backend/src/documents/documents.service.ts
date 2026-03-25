@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Document } from '../database/entities/document.entity';
 import { User } from '../database/entities/user.entity';
@@ -125,7 +125,7 @@ export class DocumentsService {
             extractedData: {
               error: error.message,
               failedAt: new Date().toISOString(),
-            },
+            } as any,
           });
         } catch (dbError) {
           this.logger.error(`Failed to update error status: ${dbError.message}`);
@@ -175,6 +175,67 @@ export class DocumentsService {
     );
 
     return results;
+  }
+
+  /**
+   * Lightweight status check for polling during async processing.
+   */
+  /**
+   * Batch status check — returns status of multiple documents at once.
+   */
+  async getBatchStatus(documentIds: number[], user: User) {
+    const documents = await this.documentRepository.find({
+      where: { id: In(documentIds), userId: user.id },
+      select: ['id', 'status', 'filename', 'documentTypeId', 'confidenceScore', 'updatedAt'],
+      relations: ['documentType'],
+    });
+
+    const total = documents.length;
+    const completed = documents.filter((d) => d.status === 'completed').length;
+    const processing = documents.filter((d) => d.status === 'processing').length;
+    const errors = documents.filter((d) => d.status === 'error').length;
+    const pending = documents.filter((d) => d.status === 'pending_confirmation').length;
+
+    return {
+      total,
+      completed,
+      processing,
+      pendingConfirmation: pending,
+      errors,
+      allDone: processing === 0,
+      documents: documents.map((d) => ({
+        id: d.id,
+        filename: d.filename,
+        status: d.status,
+        documentTypeName: d.documentType?.name || null,
+        confidenceScore: d.confidenceScore,
+      })),
+    };
+  }
+
+  /**
+   * Lightweight status check for polling during async processing.
+   */
+  async getDocumentStatus(documentId: number, user: User) {
+    const document = await this.documentRepository.findOne({
+      where: { id: documentId, userId: user.id },
+      select: ['id', 'status', 'filename', 'documentTypeId', 'confidenceScore', 'updatedAt'],
+      relations: ['documentType'],
+    });
+
+    if (!document) {
+      throw new NotFoundException('Documento no encontrado');
+    }
+
+    return {
+      id: document.id,
+      filename: document.filename,
+      status: document.status,
+      documentTypeId: document.documentTypeId,
+      documentTypeName: document.documentType?.name || null,
+      confidenceScore: document.confidenceScore,
+      updatedAt: document.updatedAt,
+    };
   }
 
   async getDocumentById(documentId: number, user: User) {
@@ -271,7 +332,55 @@ export class DocumentsService {
    */
   async uploadBatch(files: Express.Multer.File[], user: User) {
     this.logger.log(`📦 Batch upload: ${files.length} archivos para usuario ${user.id}`);
-    return this.documentProcessingService.processBatch(files, user);
+
+    // ─── Async batch: upload all to R2, create DB records, process in background ───
+    const documentIds: number[] = [];
+
+    for (const file of files) {
+      const originalKey = this.storageService.buildKey(user.id, 'originals', file.originalname);
+      await this.storageService.uploadFile(file.buffer, originalKey, file.mimetype);
+
+      const document = this.documentRepository.create({
+        userId: user.id,
+        filename: file.originalname,
+        storageKey: originalKey,
+        storageProvider: 'r2',
+        status: 'processing',
+      });
+      await this.documentRepository.save(document);
+      documentIds.push(document.id);
+    }
+
+    // Fire-and-forget: process full batch in background
+    this.processBatchInBackground(files, user);
+
+    return {
+      success: true,
+      message: `${files.length} documentos recibidos. Procesando en segundo plano.`,
+      total: files.length,
+      documentIds,
+      processing: true,
+    };
+  }
+
+  /**
+   * Background batch processing.
+   */
+  private processBatchInBackground(
+    files: Express.Multer.File[],
+    user: User,
+  ): void {
+    (async () => {
+      try {
+        await this.documentProcessingService.processBatch(files, user);
+        this.logger.log(`✅ Background batch processing complete: ${files.length} files`);
+      } catch (error) {
+        this.logger.error(
+          `❌ Background batch processing failed: ${error.message}`,
+          error.stack,
+        );
+      }
+    })();
   }
 
   /**
