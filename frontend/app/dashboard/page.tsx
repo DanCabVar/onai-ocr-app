@@ -43,11 +43,14 @@ import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { documentsService, Document } from "@/lib/api/documents.service"
 import { documentTypesService, DocumentType } from "@/lib/api/document-types.service"
+import { chatService } from "@/lib/api/chat.service"
 
 interface Message {
   id: string
   role: "user" | "assistant"
   content: string
+  sqlQuery?: string
+  data?: Record<string, any>[]
   timestamp: Date
 }
 
@@ -231,7 +234,22 @@ export default function DashboardPage() {
     }
   }
 
-  // Chat handler (kept from original)
+  // Chat state for SQL toggle
+  const [expandedSql, setExpandedSql] = useState<Set<string>>(new Set())
+
+  const toggleSql = (messageId: string) => {
+    setExpandedSql((prev) => {
+      const next = new Set(prev)
+      if (next.has(messageId)) {
+        next.delete(messageId)
+      } else {
+        next.add(messageId)
+      }
+      return next
+    })
+  }
+
+  // Chat handler — calls real RAG SQL endpoint
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return
 
@@ -243,20 +261,40 @@ export default function DashboardPage() {
     }
 
     setMessages((prev) => [...prev, userMessage])
+    const question = inputMessage
     setInputMessage("")
     setIsProcessing(true)
 
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      const result = await chatService.query(question)
 
-    const aiMessage: Message = {
-      id: Math.random().toString(36).substring(7),
-      role: "assistant",
-      content: `He analizado tu consulta sobre "${inputMessage}". Basandome en los documentos procesados, puedo ayudarte con informacion especifica. Que mas necesitas saber?`,
-      timestamp: new Date(),
+      const aiMessage: Message = {
+        id: Math.random().toString(36).substring(7),
+        role: "assistant",
+        content: result.answer,
+        sqlQuery: result.query,
+        data: result.data,
+        timestamp: new Date(),
+      }
+
+      setMessages((prev) => [...prev, aiMessage])
+    } catch (error: any) {
+      const errorMsg =
+        error?.response?.data?.message ||
+        error?.message ||
+        "Error al procesar tu consulta"
+
+      const aiMessage: Message = {
+        id: Math.random().toString(36).substring(7),
+        role: "assistant",
+        content: `⚠️ ${errorMsg}`,
+        timestamp: new Date(),
+      }
+
+      setMessages((prev) => [...prev, aiMessage])
+    } finally {
+      setIsProcessing(false)
     }
-
-    setMessages((prev) => [...prev, aiMessage])
-    setIsProcessing(false)
   }
 
   return (
@@ -728,7 +766,73 @@ export default function DashboardPage() {
                           : "bg-muted"
                       )}
                     >
-                      <p className="text-pretty">{message.content}</p>
+                      <p className="text-pretty whitespace-pre-line">{message.content}</p>
+
+                      {/* Tabular data display */}
+                      {message.data && message.data.length > 0 && (
+                        <div className="mt-2 overflow-x-auto">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr>
+                                {Object.keys(message.data[0]).map((key) => (
+                                  <th
+                                    key={key}
+                                    className="text-left px-2 py-1 border-b border-border/50 font-semibold text-muted-foreground"
+                                  >
+                                    {key.replace(/_/g, " ")}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {message.data.slice(0, 10).map((row, i) => (
+                                <tr key={i}>
+                                  {Object.values(row).map((val, j) => (
+                                    <td
+                                      key={j}
+                                      className="px-2 py-1 border-b border-border/20"
+                                    >
+                                      {val === null || val === undefined
+                                        ? "—"
+                                        : String(val)}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {message.data.length > 10 && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Mostrando 10 de {message.data.length} filas
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Expandible SQL query */}
+                      {message.sqlQuery && (
+                        <button
+                          onClick={() => toggleSql(message.id)}
+                          className="mt-2 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                        >
+                          <ChevronDown
+                            className={cn(
+                              "h-3 w-3 transition-transform",
+                              expandedSql.has(message.id) && "rotate-180"
+                            )}
+                          />
+                          {expandedSql.has(message.id)
+                            ? "Ocultar SQL"
+                            : "Ver SQL"}
+                        </button>
+                      )}
+                      {message.sqlQuery &&
+                        expandedSql.has(message.id) && (
+                          <pre className="mt-1 p-2 bg-background/50 rounded text-[10px] overflow-x-auto font-mono leading-relaxed">
+                            {message.sqlQuery}
+                          </pre>
+                        )}
+
                       <p className="text-xs opacity-70 mt-1">
                         {message.timestamp.toLocaleTimeString("es-ES")}
                       </p>
