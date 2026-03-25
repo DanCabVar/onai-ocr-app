@@ -16,6 +16,11 @@ const nextConfig = {
       },
     ];
   },
+  // Environment variables available at build time
+  env: {
+    NEXT_PUBLIC_LANDING_URL: process.env.NEXT_PUBLIC_LANDING_URL || 'https://ocr.moti.cl',
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'https://app.ocr.moti.cl',
+  },
 }
 
 export default nextConfig

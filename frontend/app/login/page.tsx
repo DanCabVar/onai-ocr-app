@@ -43,7 +43,14 @@ export default function LoginPage() {
         description: `Has iniciado sesión como ${response.user.email}`,
       })
 
-      router.push("/")
+      // Redirect to app domain after login
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.ocr.moti.cl"
+      const hostname = window.location.hostname
+      if (hostname === "ocr.moti.cl") {
+        window.location.href = `${appUrl}/dashboard`
+      } else {
+        router.push("/dashboard")
+      }
     } catch (error: any) {
       toast({
         title: "Error de autenticación",

@@ -12,6 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { LandingHeader } from "./landing-header"
 
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.ocr.moti.cl"
+
 /* ═══════════════════════════════ HERO ═══════════════════════════════ */
 function HeroSection() {
   return (
@@ -38,12 +40,12 @@ function HeroSection() {
         </p>
 
         <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 animate-fade-in-up animation-delay-400">
-          <Link href="/register">
+          <a href={`${APP_URL}/register`}>
             <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90 text-base px-8 h-12 gap-2">
               Comenzar Gratis
               <ArrowRight className="w-4 h-4" />
             </Button>
-          </Link>
+          </a>
           <a href="#how-it-works">
             <Button size="lg" variant="outline" className="text-base px-8 h-12">
               Ver Demo
@@ -318,7 +320,7 @@ function PricingSection() {
                       </li>
                     ))}
                   </ul>
-                  <Link href={plan.name === "Enterprise" ? "#cta" : "/register"} className="mt-6">
+                  <a href={plan.name === "Enterprise" ? "#cta" : `${APP_URL}/register`} className="mt-6">
                     <Button
                       className={`w-full ${
                         plan.highlighted
@@ -329,7 +331,7 @@ function PricingSection() {
                     >
                       {plan.cta}
                     </Button>
-                  </Link>
+                  </a>
                 </CardContent>
               </Card>
             )
@@ -430,11 +432,11 @@ function CTASection() {
               placeholder="tu@email.com"
               className="h-12 bg-background"
             />
-            <Link href="/register">
+            <a href={`${APP_URL}/register`}>
               <Button size="lg" className="bg-primary text-primary-foreground hover:bg-primary/90 h-12 px-8 whitespace-nowrap">
                 Crear Cuenta
               </Button>
-            </Link>
+            </a>
           </div>
 
           <p className="mt-4 text-xs text-muted-foreground">

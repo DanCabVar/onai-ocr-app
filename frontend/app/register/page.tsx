@@ -69,7 +69,14 @@ export default function RegisterPage() {
         description: `Bienvenido ${response.user.email}`,
       })
 
-      router.push("/document-types")
+      // Redirect to app domain after registration
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.ocr.moti.cl"
+      const hostname = window.location.hostname
+      if (hostname === "ocr.moti.cl") {
+        window.location.href = `${appUrl}/dashboard`
+      } else {
+        router.push("/dashboard")
+      }
     } catch (error: any) {
       toast({
         title: "Error de registro",

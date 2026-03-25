@@ -5,6 +5,8 @@ import Link from "next/link"
 import { ScanEye, Menu, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.ocr.moti.cl"
+
 const navLinks = [
   { label: "Características", href: "#features" },
   { label: "Cómo funciona", href: "#how-it-works" },
@@ -40,14 +42,14 @@ export function LandingHeader() {
 
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-3">
-            <Link href="/login">
+            <a href={`${APP_URL}/login`}>
               <Button variant="ghost" size="sm">Iniciar Sesión</Button>
-            </Link>
-            <Link href="/register">
+            </a>
+            <a href={`${APP_URL}/register`}>
               <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
                 Registrarse
               </Button>
-            </Link>
+            </a>
           </div>
 
           {/* Mobile toggle */}
@@ -73,14 +75,14 @@ export function LandingHeader() {
               </a>
             ))}
             <div className="flex flex-col gap-2 pt-2">
-              <Link href="/login">
+              <a href={`${APP_URL}/login`}>
                 <Button variant="ghost" size="sm" className="w-full">Iniciar Sesión</Button>
-              </Link>
-              <Link href="/register">
+              </a>
+              <a href={`${APP_URL}/register`}>
                 <Button size="sm" className="w-full bg-primary text-primary-foreground">
                   Registrarse
                 </Button>
-              </Link>
+              </a>
             </div>
           </div>
         )}

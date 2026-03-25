@@ -11,9 +11,18 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
 
-  // Habilitar CORS
+  // Habilitar CORS — accept both landing and app domains
+  const frontendUrl = configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+  const landingUrl = configService.get<string>('LANDING_URL');
+  const appUrlEnv = configService.get<string>('APP_URL');
+  const allowedOrigins = [frontendUrl];
+  if (landingUrl) allowedOrigins.push(landingUrl);
+  if (appUrlEnv) allowedOrigins.push(appUrlEnv);
+  // Deduplicate
+  const uniqueOrigins = [...new Set(allowedOrigins)];
+
   app.enableCors({
-    origin: configService.get<string>('FRONTEND_URL') || 'http://localhost:3000',
+    origin: uniqueOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],

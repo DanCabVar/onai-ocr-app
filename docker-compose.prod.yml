@@ -74,6 +74,8 @@ services:
       # Server
       - PORT=4000
       - FRONTEND_URL=${FRONTEND_URL}
+      - LANDING_URL=${LANDING_URL:-https://ocr.moti.cl}
+      - APP_URL=${APP_URL:-https://app.ocr.moti.cl}
       # Google Drive OAuth
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
@@ -100,9 +102,15 @@ services:
       - onai-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.backend.rule=Host(`${API_DOMAIN}`) || (Host(`${APP_DOMAIN}`) && PathPrefix(`/api`))"
-      - "traefik.http.routers.backend.entrypoints=websecure"
-      - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
+      # API router for landing domain
+      - "traefik.http.routers.onai-api-landing.rule=Host(`${LANDING_DOMAIN:-ocr.moti.cl}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.onai-api-landing.entrypoints=websecure"
+      - "traefik.http.routers.onai-api-landing.tls.certresolver=letsencrypt"
+      # API router for app domain
+      - "traefik.http.routers.onai-api-app.rule=Host(`${APP_DOMAIN:-app.ocr.moti.cl}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.onai-api-app.entrypoints=websecure"
+      - "traefik.http.routers.onai-api-app.tls.certresolver=letsencrypt"
+      # Shared service
       - "traefik.http.services.backend.loadbalancer.server.port=4000"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/api/google/status"]
@@ -163,6 +171,8 @@ services:
     restart: always
     environment:
       - BACKEND_URL=${BACKEND_URL:-http://backend:4000}
+      - NEXT_PUBLIC_LANDING_URL=${LANDING_URL:-https://ocr.moti.cl}
+      - NEXT_PUBLIC_APP_URL=${APP_URL:-https://app.ocr.moti.cl}
     depends_on:
       backend:
         condition: service_healthy
@@ -170,9 +180,17 @@ services:
       - onai-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`${APP_DOMAIN}`)"
-      - "traefik.http.routers.frontend.entrypoints=websecure"
-      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+      # Landing domain router
+      - "traefik.http.routers.onai-landing.rule=Host(`${LANDING_DOMAIN:-ocr.moti.cl}`)"
+      - "traefik.http.routers.onai-landing.entrypoints=websecure"
+      - "traefik.http.routers.onai-landing.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.onai-landing.priority=1"
+      # App domain router
+      - "traefik.http.routers.onai-app.rule=Host(`${APP_DOMAIN:-app.ocr.moti.cl}`)"
+      - "traefik.http.routers.onai-app.entrypoints=websecure"
+      - "traefik.http.routers.onai-app.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.onai-app.priority=1"
+      # Shared service
       - "traefik.http.services.frontend.loadbalancer.server.port=3000"
 
 # =====================================
