@@ -360,7 +360,6 @@ export class DocumentProcessingService {
             },
           ],
         },
-        storagePrefix,
         googleDriveFolderId: null,
         folderPath: null,
       });
