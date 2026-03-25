@@ -6,10 +6,12 @@ import { DocumentsModule } from './documents/documents.module';
 import { ChatModule } from './chat/chat.module';
 import { DocumentTypesModule } from './document-types/document-types.module';
 import { StorageModule } from './storage/storage.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { User } from './database/entities/user.entity';
 import { Document } from './database/entities/document.entity';
 import { DocumentType } from './database/entities/document-type.entity';
 import { GoogleToken } from './database/entities/google-token.entity';
+import { Subscription } from './database/entities/subscription.entity';
 
 // NOTE: GoogleDriveModule disabled — R2 storage is now the primary provider.
 // The google-drive/ directory is kept for reference but not imported.
@@ -34,7 +36,7 @@ import { GoogleToken } from './database/entities/google-token.entity';
         username: configService.get<string>('DATABASE_USER'),
         password: configService.get<string>('DATABASE_PASSWORD'),
         database: configService.get<string>('DATABASE_NAME'),
-        entities: [User, Document, DocumentType, GoogleToken],
+        entities: [User, Document, DocumentType, GoogleToken, Subscription],
         synchronize: true, // ⚠️ Solo para desarrollo, desactivar en producción
         logging: false,
       }),
@@ -43,6 +45,7 @@ import { GoogleToken } from './database/entities/google-token.entity';
     // Módulos de la aplicación
     AuthModule,
     StorageModule,
+    SubscriptionsModule,
     // GoogleDriveModule, // DISABLED — replaced by StorageModule (R2)
     DocumentTypesModule,
     DocumentsModule,

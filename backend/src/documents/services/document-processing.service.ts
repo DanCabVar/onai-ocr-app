@@ -8,6 +8,7 @@ import { GeminiClassifierService } from '../../ai-services/gemini-classifier.ser
 import { OCRCacheService } from '../../ai-services/ocr-cache.service';
 import { PipelineMetricsService, PipelineMetrics } from '../../ai-services/pipeline-metrics.service';
 import { StorageService } from '../../storage/storage.service';
+import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 import { User } from '../../database/entities/user.entity';
 
 export interface ProcessingResult {
@@ -49,6 +50,7 @@ export class DocumentProcessingService {
     private readonly ocrCache: OCRCacheService,
     private readonly metrics: PipelineMetricsService,
     private readonly storageService: StorageService,
+    private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
   private async getAvailableTypes(): Promise<DocumentType[]> {
@@ -254,6 +256,9 @@ export class DocumentProcessingService {
       if ((cacheStats.hits + cacheStats.misses) % 10 === 0) {
         this.logger.log(`📊 OCR Cache: ${cacheStats.hitRate} hit rate (${cacheStats.size} entries)`);
       }
+
+      // Increment subscription usage
+      await this.subscriptionsService.incrementUsage(user.id);
 
       this.logger.log(`✅ Documento procesado: ${document.id}`);
 
