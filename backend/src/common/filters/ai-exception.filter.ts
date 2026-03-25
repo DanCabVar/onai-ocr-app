@@ -20,7 +20,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
 
-    // If it's already an HttpException, let NestJS handle it normally
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const body = exception.getResponse();
@@ -32,45 +31,27 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       return;
     }
 
-    // Determine appropriate status from error message
     const error = exception as Error;
     const message = error?.message || 'Error interno del servidor';
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
 
     // AI/processing errors → 422
-    if (
-      message.includes('Gemini') ||
-      message.includes('Mistral') ||
-      message.includes('OCR') ||
-      message.includes('parse') ||
-      message.includes('JSON') ||
-      message.includes('extract') ||
-      message.includes('classify') ||
-      message.includes('vision') ||
-      message.includes('procesar')
-    ) {
+    if (/Gemini|Mistral|OCR|parse|JSON|extract|classify|vision|procesar/i.test(message)) {
       status = HttpStatus.UNPROCESSABLE_ENTITY;
     }
 
-    // Config/setup errors → 400
-    if (
-      message.includes('no está configurada') ||
-      message.includes('not configured') ||
-      message.includes('No hay tipos')
-    ) {
+    // Config errors → 400
+    if (/no está configurada|not configured|No hay tipos/i.test(message)) {
       status = HttpStatus.BAD_REQUEST;
     }
 
     // Rate limit → 429
-    if (message.includes('rate limit') || message.includes('429') || message.includes('quota')) {
+    if (/rate.limit|429|quota/i.test(message)) {
       status = HttpStatus.TOO_MANY_REQUESTS;
     }
 
-    this.logger.error(
-      `Unhandled exception [${status}]: ${message}`,
-      error?.stack,
-    );
+    this.logger.error(`Unhandled [${status}]: ${message}`, error?.stack);
 
     response.status(status).json({
       statusCode: status,

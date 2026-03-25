@@ -142,7 +142,7 @@ export class DocumentProcessingService {
       // Load available types (may already be loaded in parallel above)
       const availableTypes = await this.getAvailableTypes(user.id);
       if (availableTypes.length === 0) {
-        throw new Error(
+        throw new BadRequestException(
           'No hay tipos de documento configurados. Crea al menos un tipo antes de subir documentos.',
         );
       }
@@ -287,7 +287,18 @@ export class DocumentProcessingService {
       // Finalize metrics even on error
       this.metrics.finalize(ctx);
 
-      throw error;
+      // Pass through NestJS HTTP exceptions as-is
+      if (error instanceof BadRequestException || error instanceof UnprocessableEntityException) {
+        throw error;
+      }
+
+      // Convert AI/processing errors to 422
+      const msg = error.message || 'Error desconocido';
+      if (/parse|JSON|Gemini|Mistral|OCR|extract|classify|vision|rate.limit|429/i.test(msg)) {
+        throw new UnprocessableEntityException(`No se pudo procesar el documento: ${msg}`);
+      }
+
+      throw new BadRequestException(`Error procesando documento: ${msg}`);
     }
   }
 
