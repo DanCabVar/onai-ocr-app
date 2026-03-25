@@ -73,7 +73,7 @@ export class MistralOCRService {
         }
 
         if (!extractedText || extractedText.length === 0) {
-          throw new Error('No se pudo extraer texto del documento');
+          throw new Error('Mistral OCR: No se pudo extraer texto del documento. El archivo puede estar vacío, corrupto o protegido con contraseña.');
         }
 
         this.logger.log(`✅ OCR: ${extractedText.length} chars, ${pageCount} páginas`);

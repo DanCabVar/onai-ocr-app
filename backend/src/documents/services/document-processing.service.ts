@@ -1,4 +1,11 @@
-import { Injectable, Logger, BadRequestException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  PayloadTooLargeException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Document } from '../../database/entities/document.entity';
@@ -68,6 +75,39 @@ export class DocumentProcessingService {
     this.documentTypesCache.clear();
   }
 
+  /** Formatos de archivo soportados */
+  private readonly SUPPORTED_MIME_TYPES = [
+    'application/pdf',
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+  ];
+
+  /** Tamaño máximo de archivo: 10MB */
+  private readonly MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+  /**
+   * Valida el archivo antes de procesarlo.
+   * Lanza excepciones HTTP apropiadas si no pasa validación.
+   */
+  private validateFile(fileBuffer: Buffer, mimeType: string, originalName: string): void {
+    // Validar tamaño
+    if (fileBuffer.length > this.MAX_FILE_SIZE) {
+      const sizeMB = (fileBuffer.length / (1024 * 1024)).toFixed(1);
+      throw new PayloadTooLargeException(
+        `El archivo "${originalName}" pesa ${sizeMB}MB. El tamaño máximo permitido es 10MB.`,
+      );
+    }
+
+    // Validar formato
+    if (!this.SUPPORTED_MIME_TYPES.includes(mimeType)) {
+      throw new BadRequestException(
+        `Formato no soportado: "${mimeType}". Solo se permiten archivos PDF e imágenes (JPEG, PNG, WebP).`,
+      );
+    }
+  }
+
   /**
    * Main document processing pipeline.
    * 
@@ -86,6 +126,9 @@ export class DocumentProcessingService {
     mimeType: string,
     user: User,
   ): Promise<ProcessingResult> {
+    // ─── Validaciones previas ───
+    this.validateFile(fileBuffer, mimeType, originalName);
+
     this.logger.log(`📄 Procesando: ${originalName}`);
 
     // Initialize metrics tracking
@@ -287,18 +330,52 @@ export class DocumentProcessingService {
       // Finalize metrics even on error
       this.metrics.finalize(ctx);
 
-      // Pass through NestJS HTTP exceptions as-is
-      if (error instanceof BadRequestException || error instanceof UnprocessableEntityException) {
+      // Re-throw si ya es una HttpException (BadRequest, PayloadTooLarge, etc.)
+      if (error instanceof HttpException) {
         throw error;
       }
 
-      // Convert AI/processing errors to 422
-      const msg = error.message || 'Error desconocido';
-      if (/parse|JSON|Gemini|Mistral|OCR|extract|classify|vision|rate.limit|429/i.test(msg)) {
-        throw new UnprocessableEntityException(`No se pudo procesar el documento: ${msg}`);
+      // Errores de Mistral OCR → 422
+      if (
+        error.message?.includes('No se pudo extraer texto') ||
+        error.message?.includes('Mistral') ||
+        error.message?.includes('OCR')
+      ) {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+            message: `No se pudo procesar el documento "${originalName}". El servicio OCR no logró extraer texto. Verifica que el archivo no esté corrupto o protegido.`,
+            error: 'Unprocessable Entity',
+          },
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
       }
 
-      throw new BadRequestException(`Error procesando documento: ${msg}`);
+      // Errores de Gemini (clasificación/extracción) → 422
+      if (
+        error.message?.includes('Gemini') ||
+        error.message?.includes('Failed to parse') ||
+        error.message?.includes('generateContent')
+      ) {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+            message: `No se pudo procesar el documento "${originalName}". El servicio de clasificación no pudo analizar el contenido.`,
+            error: 'Unprocessable Entity',
+          },
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+
+      // Error genérico → 422 con mensaje descriptivo
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+          message: `No se pudo procesar el documento "${originalName}". Error: ${error.message}`,
+          error: 'Unprocessable Entity',
+        },
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
     }
   }
 

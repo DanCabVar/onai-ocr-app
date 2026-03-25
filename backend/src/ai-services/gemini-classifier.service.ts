@@ -94,7 +94,7 @@ export class GeminiClassifierService {
     } catch (error) {
       this.logger.error(`JSON parse failed: ${error.message}`);
       this.logger.error(`Response (first 300 chars): ${response.substring(0, 300)}`);
-      throw new Error(`Failed to parse Gemini JSON: ${error.message}`);
+      throw new Error(`Gemini: no se pudo interpretar la respuesta de clasificación. ${error.message}`);
     }
   }
 
