@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Document } from '../../database/entities/document.entity';
@@ -80,7 +86,7 @@ export class DocumentProcessingService {
       const availableTypes = await this.documentTypeRepository.find();
 
       if (availableTypes.length === 0) {
-        throw new Error(
+        throw new BadRequestException(
           'No hay tipos de documento configurados. Por favor, crea al menos un tipo antes de subir documentos.',
         );
       }
@@ -230,7 +236,34 @@ export class DocumentProcessingService {
         }
       }
 
-      throw error;
+      // Convert generic errors to proper HTTP exceptions
+      if (error instanceof BadRequestException || error instanceof UnprocessableEntityException || error instanceof NotFoundException) {
+        throw error;
+      }
+
+      // AI processing failures → 422 Unprocessable Entity
+      const msg = error.message || 'Error desconocido';
+      if (
+        msg.includes('parse') ||
+        msg.includes('JSON') ||
+        msg.includes('Gemini') ||
+        msg.includes('Mistral') ||
+        msg.includes('OCR') ||
+        msg.includes('extract') ||
+        msg.includes('classify') ||
+        msg.includes('vision') ||
+        msg.includes('rate limit') ||
+        msg.includes('429')
+      ) {
+        throw new UnprocessableEntityException(
+          `No se pudo procesar el documento: ${msg}`,
+        );
+      }
+
+      // Everything else → 400 with original message
+      throw new BadRequestException(
+        `Error procesando documento: ${msg}`,
+      );
     }
   }
 
