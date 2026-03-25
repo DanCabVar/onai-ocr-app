@@ -7,6 +7,7 @@ import { ChatModule } from './chat/chat.module';
 import { DocumentTypesModule } from './document-types/document-types.module';
 import { StorageModule } from './storage/storage.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { StripeModule } from './stripe/stripe.module';
 import { User } from './database/entities/user.entity';
 import { Document } from './database/entities/document.entity';
 import { DocumentType } from './database/entities/document-type.entity';
@@ -46,6 +47,7 @@ import { Subscription } from './database/entities/subscription.entity';
     AuthModule,
     StorageModule,
     SubscriptionsModule,
+    StripeModule,
     // GoogleDriveModule, // DISABLED — replaced by StorageModule (R2)
     DocumentTypesModule,
     DocumentsModule,
