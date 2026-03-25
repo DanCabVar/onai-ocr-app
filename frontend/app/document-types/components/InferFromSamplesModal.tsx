@@ -288,7 +288,7 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
                 </div>
               )}
 
-              {/* Opción: Subir ejemplos a Drive */}
+              {/* Opción: Subir ejemplos al sistema */}
               {files.length > 0 && (
                 <div className="flex items-start gap-3 p-4 rounded-lg border border-border bg-muted/20">
                   <input
@@ -299,7 +299,7 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
                     className="mt-1"
                   />
                   <label htmlFor="upload-samples" className="text-sm cursor-pointer">
-                    <p className="font-medium mb-1">Guardar documentos en Drive y Base de Datos</p>
+                    <p className="font-medium mb-1">Guardar documentos en el sistema</p>
                     <p className="text-xs text-muted-foreground">
                       Los documentos se procesarán como documentos reales y estarán disponibles en el sistema
                     </p>
@@ -380,7 +380,7 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
                       <div className="h-4 w-4" />
                     )}
                     <span className={progress < 70 ? 'text-muted-foreground' : ''}>
-                      Guardando en Drive y BD...
+                      Guardando en el sistema...
                     </span>
                   </div>
                 </div>
