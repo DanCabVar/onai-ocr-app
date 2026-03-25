@@ -7,6 +7,8 @@ import { DocumentType } from '../../database/entities/document-type.entity';
 import { Document } from '../../database/entities/document.entity';
 import { User } from '../../database/entities/user.entity';
 import { GeminiClassifierService } from '../../ai-services/gemini-classifier.service';
+import { MistralOCRService } from '../../ai-services/mistral-ocr.service';
+import { OCRCacheService } from '../../ai-services/ocr-cache.service';
 import { AIRateLimiterService } from '../../ai-services/rate-limiter.service';
 import { PipelineMetricsService } from '../../ai-services/pipeline-metrics.service';
 import { withRetry } from '../../ai-services/retry.util';
@@ -19,16 +21,83 @@ import {
   ConsolidatedField,
 } from '../dto/infer-from-samples.dto';
 
+// ─── Concurrency Semaphore ───────────────────────────────────────────────────
+class Semaphore {
+  private queue: Array<() => void> = [];
+  private running = 0;
+
+  constructor(private readonly max: number) {}
+
+  async acquire(): Promise<void> {
+    if (this.running < this.max) {
+      this.running++;
+      return;
+    }
+    return new Promise<void>((resolve) => {
+      this.queue.push(() => {
+        this.running++;
+        resolve();
+      });
+    });
+  }
+
+  release(): void {
+    this.running--;
+    const next = this.queue.shift();
+    if (next) next();
+  }
+}
+
 /**
- * Document Type Inference Service (Optimized)
- * 
- * Handles batch inference: classify multiple sample documents → create document types.
- * 
- * Optimizations:
- * - Rate limiting on all Gemini calls (shared with classifier service)
- * - Retry logic with exponential backoff
- * - Optimized prompts for grouping/consolidation (~40% fewer tokens)
- * - Pipeline metrics per batch
+ * Run tasks with a true concurrency semaphore (not batch-of-N).
+ * Returns PromiseSettledResult[] so individual failures don't kill the batch.
+ */
+async function runWithSemaphore<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const sem = new Semaphore(concurrency);
+  const tasks = items.map(async (item, idx) => {
+    await sem.acquire();
+    try {
+      return await fn(item, idx);
+    } finally {
+      sem.release();
+    }
+  });
+  return Promise.allSettled(tasks);
+}
+
+// ─── Interfaces for internal pipeline state ──────────────────────────────────
+
+interface OcrDoc {
+  file: Express.Multer.File;
+  ocrText: string;
+  contentHash: string;
+  error?: string;
+}
+
+interface ClassifiedDoc extends OcrDoc {
+  inferredType: string;
+}
+
+interface TypeGroup {
+  canonicalName: string;
+  docs: ClassifiedDoc[];
+  existingType: DocumentType | null;
+}
+
+/**
+ * Document Type Inference Service (Refactored — True Parallel Pipeline)
+ *
+ * Pipeline:
+ *   STEP 1 → OCR in parallel (max 3 concurrent, with cache)
+ *   STEP 2 → Classify in parallel (max 5 concurrent)
+ *   STEP 3 → Homologate types (single Gemini call to group similar names)
+ *   STEP 4 → Consolidate schema per group (up to 30 shared fields)
+ *   STEP 5 → Re-extract with unified schema (max 3 concurrent)
+ *   STEP 6 → Save to DB + R2 (per type, in {user_id}/tipos/{tipo-slug}/)
  */
 @Injectable()
 export class DocumentTypeInferenceService {
@@ -43,6 +112,8 @@ export class DocumentTypeInferenceService {
     @InjectRepository(Document)
     private readonly documentRepository: Repository<Document>,
     private readonly geminiClassifierService: GeminiClassifierService,
+    private readonly mistralOCRService: MistralOCRService,
+    private readonly ocrCache: OCRCacheService,
     private readonly rateLimiter: AIRateLimiterService,
     private readonly metricsService: PipelineMetricsService,
     private readonly storageService: StorageService,
@@ -60,465 +131,339 @@ export class DocumentTypeInferenceService {
     this.logger.log(`Inference Service inicializado: ${this.modelName}`);
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HELPERS
+  // ═══════════════════════════════════════════════════════════════════════════
+
   /**
    * Normaliza tipos de campo de Gemini a tipos válidos de FieldDefinition
-   * @param type - Tipo inferido por Gemini (puede ser "email", "phone", "currency", etc.)
-   * @returns Tipo válido para FieldDefinition
    */
   private normalizeFieldType(type: string): 'string' | 'number' | 'date' | 'boolean' | 'array' {
     const lowerType = type.toLowerCase().trim();
-    
-    // Mapeo de tipos
-    if (lowerType === 'number' || lowerType === 'integer' || lowerType === 'float' || lowerType === 'currency') {
-      return 'number';
-    }
-    
-    if (lowerType === 'date' || lowerType === 'datetime' || lowerType === 'timestamp') {
-      return 'date';
-    }
-    
-    if (lowerType === 'boolean' || lowerType === 'bool') {
-      return 'boolean';
-    }
-    
-    if (lowerType === 'array' || lowerType === 'list') {
-      return 'array';
-    }
-    
-    // Por defecto, todo lo demás es string (email, phone, text, etc.)
+
+    if (['number', 'integer', 'float', 'currency'].includes(lowerType)) return 'number';
+    if (['date', 'datetime', 'timestamp'].includes(lowerType)) return 'date';
+    if (['boolean', 'bool'].includes(lowerType)) return 'boolean';
+    if (['array', 'list'].includes(lowerType)) return 'array';
+
     return 'string';
   }
 
   /**
-   * MÉTODO 1 (NUEVO): Solo clasifica documentos (identifica tipo, sin extraer campos)
-   * @param files - Array de archivos
-   * @param user - Usuario para verificar tipos existentes
-   * @returns Map de tipo → documentos
+   * Deduplicate files by content hash so the same PDF isn't processed N times.
    */
-  async classifyAndGroupDocuments(
-    files: Express.Multer.File[],
-    user: User,
-  ): Promise<Map<string, { files: Express.Multer.File[], existingType: DocumentType | null }>> {
-    this.logger.log(`🔍 Clasificando ${files.length} documentos...`);
+  private deduplicateFiles(files: Express.Multer.File[]): Express.Multer.File[] {
+    const seen = new Set<string>();
+    const unique: Express.Multer.File[] = [];
 
-    // Obtener todos los tipos existentes (compartidos entre todos los usuarios)
-    const existingTypes = await this.documentTypeRepository.find();
-
-    const classifications = new Map<string, { files: Express.Multer.File[], existingType: DocumentType | null }>();
-
-    // Procesar documentos en paralelo (máximo 3 a la vez)
-    const batchSize = 3;
-    for (let i = 0; i < files.length; i += batchSize) {
-      const batch = files.slice(i, i + batchSize);
-      
-      await Promise.all(
-        batch.map(async (file, index) => {
-          try {
-            this.logger.log(`   📄 Clasificando ${i + index + 1}/${files.length}: ${file.originalname}`);
-
-            // Solo extraer el tipo (sin campos completos)
-            const inferredData = await this.geminiClassifierService.inferFieldsForUnclassifiedWithVision(
-              file.buffer,
-              file.mimetype,
-            );
-
-            const inferredType = inferredData.inferred_type;
-            this.logger.log(`   ✅ ${file.originalname}: "${inferredType}"`);
-
-            // Buscar si este tipo ya existe en BD
-            const existingType = existingTypes.find(
-              t => t.name.toLowerCase().trim() === inferredType.toLowerCase().trim()
-            );
-
-            if (existingType) {
-              this.logger.log(`   📌 Tipo "${inferredType}" ya existe en BD (ID: ${existingType.id})`);
-            } else {
-              this.logger.log(`   🆕 Tipo "${inferredType}" es nuevo`);
-            }
-
-            // Agrupar por tipo
-            if (!classifications.has(inferredType)) {
-              classifications.set(inferredType, { files: [], existingType: existingType || null });
-            }
-            classifications.get(inferredType)!.files.push(file);
-
-          } catch (error) {
-            this.logger.error(`   ❌ Error clasificando ${file.originalname}: ${error.message}`);
-            throw error;
-          }
-        }),
-      );
+    for (const file of files) {
+      const hash = this.ocrCache.computeHash(file.buffer);
+      if (!seen.has(hash)) {
+        seen.add(hash);
+        unique.push(file);
+      } else {
+        this.logger.warn(`⚠️  Duplicado detectado y omitido: "${file.originalname}"`);
+      }
     }
 
-    this.logger.log(`✅ ${files.length} documentos clasificados en ${classifications.size} tipo(s)`);
-    return classifications;
+    return unique;
   }
 
-  /**
-   * MÉTODO 2: Agrupa documentos por tipo (consolida nombres similares)
-   * @param processedDocs - Documentos procesados del método anterior
-   * @returns Map de tipo consolidado -> documentos
-   */
-  async groupDocumentsByType(
-    processedDocs: ProcessedDocument[],
-  ): Promise<Map<string, ProcessedDocument[]>> {
-    this.logger.log(`🔍 Agrupando ${processedDocs.length} documentos por tipo...`);
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 1: OCR (parallel, max 3 concurrent, with cache)
+  // ═══════════════════════════════════════════════════════════════════════════
 
-    // Extraer tipos únicos
-    const uniqueTypes = [...new Set(processedDocs.map((doc) => doc.inferredType))];
-    this.logger.log(`   📋 Tipos identificados: ${uniqueTypes.join(', ')}`);
+  private async step1_OCR(files: Express.Multer.File[]): Promise<OcrDoc[]> {
+    this.logger.log(`\n📖 PASO 1: OCR en paralelo (${files.length} docs, max 3 concurrent)...`);
 
-    // Si solo hay un tipo, devolver directamente
-    if (uniqueTypes.length === 1) {
-      this.logger.log(`   ℹ️  Solo un tipo identificado, no es necesario agrupar`);
-      return new Map([[uniqueTypes[0], processedDocs]]);
+    const results = await runWithSemaphore(files, 3, async (file, idx) => {
+      const contentHash = this.ocrCache.computeHash(file.buffer);
+
+      // Check cache first
+      const cached = await this.ocrCache.get(contentHash);
+      if (cached) {
+        this.logger.log(`   🎯 [${idx + 1}/${files.length}] Cache HIT: "${file.originalname}"`);
+        return { file, ocrText: cached.text, contentHash } as OcrDoc;
+      }
+
+      this.logger.log(`   📄 [${idx + 1}/${files.length}] OCR: "${file.originalname}"...`);
+
+      // Upload to R2 temporarily for Mistral OCR (needs a URL)
+      // Use userId=0 as temp namespace for OCR processing
+      const tempKey = this.storageService.buildKey(0, 'originals', `temp-ocr-${contentHash}-${file.originalname}`);
+      await this.storageService.uploadFile(file.buffer, tempKey, file.mimetype);
+      const presignedUrl = await this.storageService.getPresignedUrl(tempKey, 600);
+
+      try {
+        const ocrResult = await this.mistralOCRService.extractTextSmart(presignedUrl, file.mimetype);
+
+        // Cache the result
+        this.ocrCache.set(contentHash, {
+          text: ocrResult.text,
+          confidence: ocrResult.confidence,
+          metadata: ocrResult.metadata,
+        });
+
+        this.logger.log(`   ✅ [${idx + 1}/${files.length}] "${file.originalname}": ${ocrResult.text.length} chars`);
+        return { file, ocrText: ocrResult.text, contentHash } as OcrDoc;
+      } finally {
+        // Cleanup temp file (best-effort)
+        this.storageService.deleteFile(tempKey).catch(() => {});
+      }
+    });
+
+    const ocrDocs: OcrDoc[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === 'fulfilled') {
+        ocrDocs.push(r.value);
+      } else {
+        this.logger.error(`   ❌ OCR falló para "${files[i].originalname}": ${r.reason?.message}`);
+        ocrDocs.push({
+          file: files[i],
+          ocrText: '',
+          contentHash: this.ocrCache.computeHash(files[i].buffer),
+          error: r.reason?.message || 'OCR failed',
+        });
+      }
     }
 
-    // Usar Gemini para agrupar tipos similares
-    const prompt = `Eres un experto en clasificación de documentos.
+    const successCount = ocrDocs.filter((d) => !d.error).length;
+    this.logger.log(`   📊 OCR completado: ${successCount}/${files.length} exitosos`);
+    return ocrDocs;
+  }
 
-Tengo estos tipos de documentos identificados:
-${uniqueTypes.map((t, i) => `${i + 1}. "${t}"`).join('\n')}
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 2: Classify in parallel (max 5 concurrent)
+  // ═══════════════════════════════════════════════════════════════════════════
 
-**TAREA:** Agrupa los tipos que son EQUIVALENTES (mismo tipo de documento con nombres diferentes).
+  private async step2_Classify(ocrDocs: OcrDoc[]): Promise<ClassifiedDoc[]> {
+    // Filter out docs that failed OCR
+    const validDocs = ocrDocs.filter((d) => !d.error && d.ocrText.length > 0);
+    this.logger.log(`\n🏷️  PASO 2: Clasificar en paralelo (${validDocs.length} docs, max 5 concurrent)...`);
 
-**EJEMPLOS:**
-- "Orden de Compra", "Purchase Order", "Orden Compra" → MISMO TIPO
-- "Factura", "Invoice", "Boleta" → MISMO TIPO
-- "Orden de Compra" vs "Factura" → TIPOS DIFERENTES
+    const results = await runWithSemaphore(validDocs, 5, async (doc, idx) => {
+      this.logger.log(`   🔍 [${idx + 1}/${validDocs.length}] Clasificando "${doc.file.originalname}"...`);
 
-**INSTRUCCIONES:**
-1. Identifica grupos de tipos equivalentes
-2. Para cada grupo, elige un nombre consolidado (preferiblemente en español)
-3. Si un tipo no tiene equivalentes, créale su propio grupo
+      const inferred = await this.geminiClassifierService.inferFieldsForUnclassified(doc.ocrText);
 
-**FORMATO DE RESPUESTA (JSON):**
-{
-  "groups": [
-    {
-      "consolidatedName": "Nombre definitivo en español",
-      "equivalents": ["tipo1", "tipo2", ...]
+      this.logger.log(`   ✅ [${idx + 1}/${validDocs.length}] "${doc.file.originalname}" → "${inferred.inferred_type}"`);
+
+      return {
+        ...doc,
+        inferredType: inferred.inferred_type,
+      } as ClassifiedDoc;
+    });
+
+    const classifiedDocs: ClassifiedDoc[] = [];
+
+    // Keep error docs from step 1
+    for (const doc of ocrDocs) {
+      if (doc.error) {
+        classifiedDocs.push({ ...doc, inferredType: '__ERROR__' } as ClassifiedDoc);
+      }
     }
-  ]
-}
 
-Responde SOLO con el JSON, sin texto adicional.`;
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === 'fulfilled') {
+        classifiedDocs.push(r.value);
+      } else {
+        this.logger.error(`   ❌ Clasificación falló para "${validDocs[i].file.originalname}": ${r.reason?.message}`);
+        classifiedDocs.push({
+          ...validDocs[i],
+          inferredType: '__ERROR__',
+          error: r.reason?.message || 'Classification failed',
+        } as ClassifiedDoc);
+      }
+    }
 
+    const successCount = classifiedDocs.filter((d) => d.inferredType !== '__ERROR__').length;
+    this.logger.log(`   📊 Clasificación completada: ${successCount}/${ocrDocs.length} exitosos`);
+    return classifiedDocs;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 3: Homologate types (single Gemini call)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  private async step3_Homologate(
+    classifiedDocs: ClassifiedDoc[],
+    existingTypes: DocumentType[],
+  ): Promise<TypeGroup[]> {
+    // Separate error docs
+    const validDocs = classifiedDocs.filter((d) => d.inferredType !== '__ERROR__');
+    const errorDocs = classifiedDocs.filter((d) => d.inferredType === '__ERROR__');
+
+    // Collect unique inferred type names
+    const uniqueTypes = [...new Set(validDocs.map((d) => d.inferredType))];
+    this.logger.log(`\n🔀 PASO 3: Homologar tipos (${uniqueTypes.length} tipos únicos detectados)...`);
+    this.logger.log(`   📋 Tipos: ${uniqueTypes.join(', ')}`);
+
+    // Check which types already exist in DB
+    const existingByName = new Map<string, DocumentType>();
+    for (const et of existingTypes) {
+      existingByName.set(et.name.toLowerCase().trim(), et);
+    }
+
+    // If only 1 type, skip homologation
+    if (uniqueTypes.length <= 1) {
+      this.logger.log(`   ℹ️  Solo ${uniqueTypes.length} tipo, no requiere homologación`);
+      const groups: TypeGroup[] = [];
+
+      if (uniqueTypes.length === 1) {
+        const name = uniqueTypes[0];
+        const existing = existingByName.get(name.toLowerCase().trim()) || null;
+        groups.push({
+          canonicalName: name,
+          docs: validDocs,
+          existingType: existing,
+        });
+      }
+
+      return groups;
+    }
+
+    // Use GeminiClassifierService homologation
+    let homologation: Record<string, string[]>;
     try {
-      const groupingResult = await withRetry(async () => {
-        await this.rateLimiter.acquire('gemini');
-        const result = await this.model.generateContent(prompt);
-        const response = result.response.text();
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error('No JSON in grouping response');
-        return JSON.parse(jsonMatch[0]);
-      }, { maxRetries: 2, label: 'Gemini group-types' });
-
-      this.logger.log(`   ✅ Gemini identificó ${groupingResult.groups.length} grupos`);
-
-      // Construir el Map de grupos
-      const typeGroups = new Map<string, ProcessedDocument[]>();
-
-      for (const group of groupingResult.groups) {
-        const consolidatedName = group.consolidatedName;
-        const equivalents = [consolidatedName, ...(group.equivalents || [])];
-
-        this.logger.log(`   📁 Grupo "${consolidatedName}": ${equivalents.join(', ')}`);
-
-        // Filtrar documentos que pertenecen a este grupo
-        const docsInGroup = processedDocs.filter((doc) =>
-          equivalents.some(
-            (equiv) => equiv.toLowerCase().trim() === doc.inferredType.toLowerCase().trim(),
-          ),
-        );
-
-        if (docsInGroup.length > 0) {
-          typeGroups.set(consolidatedName, docsInGroup);
-          this.logger.log(`      → ${docsInGroup.length} documentos en este grupo`);
-        }
+      homologation = await this.geminiClassifierService.homologateTypes(uniqueTypes);
+      this.logger.log(`   ✅ Homologación: ${Object.keys(homologation).length} grupos canónicos`);
+      for (const [canonical, variants] of Object.entries(homologation)) {
+        this.logger.log(`      📁 "${canonical}" ← [${variants.join(', ')}]`);
       }
-
-      return typeGroups;
     } catch (error) {
-      this.logger.error(`❌ Error agrupando tipos: ${error.message}`);
-      
-      // Fallback: agrupar exactamente por nombre
-      this.logger.warn(`⚠️  Usando agrupación por nombre exacto como fallback`);
-      const fallbackGroups = new Map<string, ProcessedDocument[]>();
-      
-      for (const type of uniqueTypes) {
-        const docs = processedDocs.filter((doc) => doc.inferredType === type);
-        fallbackGroups.set(type, docs);
+      this.logger.error(`   ❌ Homologación falló: ${error.message}. Usando nombres originales.`);
+      // Fallback: each type is its own group
+      homologation = {};
+      for (const t of uniqueTypes) {
+        homologation[t] = [t];
       }
-      
-      return fallbackGroups;
     }
+
+    // Build type → canonical mapping
+    const typeToCanonical = new Map<string, string>();
+    for (const [canonical, variants] of Object.entries(homologation)) {
+      for (const v of variants) {
+        typeToCanonical.set(v, canonical);
+      }
+    }
+
+    // Ensure all types have a mapping (fallback to self)
+    for (const t of uniqueTypes) {
+      if (!typeToCanonical.has(t)) {
+        typeToCanonical.set(t, t);
+      }
+    }
+
+    // Group documents by canonical name
+    const groupMap = new Map<string, ClassifiedDoc[]>();
+    for (const doc of validDocs) {
+      const canonical = typeToCanonical.get(doc.inferredType) || doc.inferredType;
+      if (!groupMap.has(canonical)) {
+        groupMap.set(canonical, []);
+      }
+      groupMap.get(canonical)!.push(doc);
+    }
+
+    // Build TypeGroup array, matching against existing DB types
+    const groups: TypeGroup[] = [];
+    for (const [canonicalName, docs] of groupMap) {
+      const existing = existingByName.get(canonicalName.toLowerCase().trim()) || null;
+      groups.push({ canonicalName, docs, existingType: existing });
+    }
+
+    this.logger.log(`   📊 ${groups.length} grupo(s) finales`);
+    return groups;
   }
 
-  /**
-   * MÉTODO 3: Consolida campos de documentos del mismo tipo
-   * @param typeName - Nombre del tipo de documento
-   * @param documents - Documentos de ese tipo
-   * @returns Tipo consolidado con campos homologados
-   */
-  async consolidateFieldsByType(
-    typeName: string,
-    documents: ProcessedDocument[],
-  ): Promise<ConsolidatedType> {
-    this.logger.log(`🔧 Consolidando campos para tipo "${typeName}" (${documents.length} documentos)...`);
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 4: Consolidate schema per group
+  // ═══════════════════════════════════════════════════════════════════════════
 
-    // Preparar descripción de campos de cada documento
-    const documentsDescription = documents.map((doc, index) => {
-      const fieldsStr = doc.fields
-        .map(
-          (f) =>
-            `  - ${f.name} (${f.type}): "${f.label}"${f.required ? ' [REQUERIDO]' : ''}`,
-        )
-        .join('\n');
-      return `DOCUMENTO ${index + 1} (${doc.filename}):\n${fieldsStr}`;
+  private async step4_ConsolidateSchema(
+    typeName: string,
+    docs: ClassifiedDoc[],
+  ): Promise<ConsolidatedType> {
+    this.logger.log(`   🔧 PASO 4: Consolidando schema para "${typeName}" (${docs.length} docs)...`);
+
+    // Build OCR text summaries for all docs in group (truncated)
+    const ocrSummaries = docs.map((doc, i) => {
+      const truncated = doc.ocrText.substring(0, 2000);
+      return `--- DOCUMENTO ${i + 1} (${doc.file.originalname}) ---\n${truncated}${doc.ocrText.length > 2000 ? '\n...(truncado)' : ''}`;
     }).join('\n\n');
 
     const prompt = `Eres un experto en diseño de schemas de datos.
 
-Tengo ${documents.length} documentos tipo "${typeName}" con estos campos extraídos:
+Tengo ${docs.length} documentos de tipo "${typeName}". Aquí están sus textos OCR:
 
-${documentsDescription}
+${ocrSummaries}
 
-**TAREA:** Consolida estos campos en UN SOLO SCHEMA definitivo para el tipo "${typeName}".
+**TAREA:** Define UN SOLO SCHEMA de hasta 30 campos principales para documentos tipo "${typeName}".
 
 **INSTRUCCIONES:**
-1. **Identificar campos equivalentes** (mismo concepto, nombres diferentes)
-   - Ejemplo: "numero_orden", "order_number", "nro_orden" → MISMO CAMPO
-   
-2. **Elegir mejor nombre** (snake_case, español, descriptivo)
-   - Ejemplo: "numero_orden"
-   
-3. **Elegir mejor tipo** (el más común o más apropiado)
-   - Si hay conflicto (string vs number), elegir el más apropiado semánticamente
-   - Tipos disponibles: string, number, date, boolean, email, phone, currency, array
-   
-4. **Determinar si es required**:
-   - required: true si aparece en ≥50% de documentos
-   - required: false si aparece en <50%
-   
-5. **Generar label y descripción útiles en español**
+1. Analiza TODOS los documentos para identificar los campos más comunes y relevantes
+2. Elige nombres en snake_case, en español, descriptivos
+3. Tipos disponibles: string, number, date, boolean, email, phone, currency, array
+4. required=true si aparece en ≥50% de los documentos
+5. Máximo 30 campos, ordenados por importancia
+6. Genera una descripción breve del tipo de documento
 
-6. **Limitar a máximo 30 campos** (los más importantes y comunes)
-
-7. **Ordenar por importancia** (campos más críticos primero)
-
-**FORMATO DE RESPUESTA (JSON):**
+**FORMATO JSON:**
 {
-  "typeDescription": "Descripción breve del tipo de documento (1-2 líneas)",
+  "typeDescription": "Descripción breve del tipo de documento",
   "consolidatedFields": [
     {
       "name": "nombre_campo",
       "type": "string|number|date|boolean|email|phone|currency|array",
       "label": "Etiqueta en español",
       "required": true|false,
-      "description": "Descripción clara del campo",
+      "description": "Descripción del campo",
       "frequency": 0.85
     }
   ]
 }
 
-Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
+JSON only, sin texto adicional.`;
 
-    try {
-      const consolidationResult = await withRetry(async () => {
-        await this.rateLimiter.acquire('gemini');
-        const result = await this.model.generateContent(prompt);
-        const response = result.response.text();
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error('No JSON in consolidation response');
-        return JSON.parse(jsonMatch[0]);
-      }, { maxRetries: 2, label: 'Gemini consolidate-fields' });
+    const consolidationResult = await withRetry(async () => {
+      await this.rateLimiter.acquire('gemini');
+      const result = await this.model.generateContent(prompt);
+      const response = result.response.text();
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON in consolidation response');
+      return JSON.parse(jsonMatch[0]);
+    }, { maxRetries: 2, label: 'Gemini consolidate-schema' });
 
-      this.logger.log(`   ✅ Consolidados ${consolidationResult.consolidatedFields.length} campos`);
+    this.logger.log(`   ✅ Schema consolidado: ${consolidationResult.consolidatedFields.length} campos`);
 
-      return {
-        typeName,
-        description: consolidationResult.typeDescription || `Tipo de documento "${typeName}" creado automáticamente a partir de ${documents.length} ejemplos`,
-        consolidatedFields: consolidationResult.consolidatedFields,
-        sampleDocuments: documents,
-        sampleCount: documents.length,
-      };
-    } catch (error) {
-      this.logger.error(`❌ Error consolidando campos para "${typeName}": ${error.message}`);
-      throw error;
-    }
+    return {
+      typeName,
+      description: consolidationResult.typeDescription || `Tipo "${typeName}" inferido de ${docs.length} documentos`,
+      consolidatedFields: consolidationResult.consolidatedFields,
+      sampleDocuments: docs.map((d) => ({
+        filename: d.file.originalname,
+        inferredType: typeName,
+        fields: [], // Fields will be populated after re-extraction
+        buffer: d.file.buffer,
+        mimeType: d.file.mimetype,
+      })),
+      sampleCount: docs.length,
+    };
   }
 
-  /**
-   * MÉTODO 4: Crea tipos de documento en BD y R2 storage
-   * @param consolidatedTypes - Tipos consolidados del método anterior
-   * @param user - Usuario que crea los tipos
-   * @param uploadSamples - Si se deben subir los documentos de ejemplo a Drive
-   * @returns Tipos creados con IDs y folders
-   */
-  async createDocumentTypesFromInference(
-    consolidatedTypes: ConsolidatedType[],
-    user: User,
-    uploadSamples: boolean = false,
-  ): Promise<CreatedDocumentType[]> {
-    this.logger.log(`💾 Creando ${consolidatedTypes.length} tipos de documento en BD y Drive...`);
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 5: Re-extract with unified schema (parallel, max 3 concurrent)
+  // ═══════════════════════════════════════════════════════════════════════════
 
-    const createdTypes: CreatedDocumentType[] = [];
-
-    for (const consolidated of consolidatedTypes) {
-      try {
-        this.logger.log(`   📁 Creando tipo "${consolidated.typeName}"...`);
-
-        // 1. Verificar si ya existe un tipo con ese nombre (compartido entre todos los usuarios)
-        const existingType = await this.documentTypeRepository.findOne({
-          where: { name: consolidated.typeName },
-        });
-
-        let documentType: DocumentType;
-        let isNewType = false;
-
-        if (existingType) {
-          this.logger.warn(`   ⚠️  El tipo "${consolidated.typeName}" ya existe.`);
-          
-          // Si no se van a subir documentos, saltar
-          if (!uploadSamples || consolidated.sampleDocuments.length === 0) {
-            this.logger.warn(`   ⏭️  No hay documentos para subir. Saltando...`);
-            continue;
-          }
-          
-          // Si se van a subir documentos, usar el tipo existente
-          this.logger.log(`   ✅ Usando tipo existente (ID: ${existingType.id}) para subir documentos...`);
-          documentType = existingType;
-        } else {
-          // Tipo nuevo: crear carpeta y tipo
-          isNewType = true;
-          
-          // R2 storage doesn't need folder creation — paths are virtual
-          this.logger.log(`   📂 R2: Using virtual folder path for "${consolidated.typeName}"`);
-
-          // 3. Crear DocumentType en BD PRIMERO (para obtener el ID)
-          this.logger.log(`   💾 Guardando tipo en base de datos...`);
-          
-          // Normalizar tipos antes de guardar
-          const normalizedFields = consolidated.consolidatedFields.map(({ frequency, ...field }) => ({
-            name: field.name,
-            type: this.normalizeFieldType(field.type),
-            label: field.label,
-            required: field.required,
-            description: field.description,
-          })) as import('../../database/entities/document-type.entity').FieldDefinition[];
-          
-          documentType = this.documentTypeRepository.create({
-            userId: user.id,
-            name: consolidated.typeName,
-            description: consolidated.description,
-            fieldSchema: {
-              fields: normalizedFields,
-            },
-            googleDriveFolderId: null, // R2 — no Drive folder
-            folderPath: null,
-          });
-
-          await this.documentTypeRepository.save(documentType);
-          this.logger.log(`   ✅ Tipo "${consolidated.typeName}" creado con ID ${documentType.id}`);
-        }
-
-        // 4. (Opcional) Subir documentos de ejemplo Y guardarlos en BD
-        if (uploadSamples && consolidated.sampleDocuments.length > 0) {
-          this.logger.log(`   📤 Subiendo y procesando ${consolidated.sampleDocuments.length} documentos...`);
-          
-          for (const doc of consolidated.sampleDocuments) {
-            try {
-              // Upload to R2 storage
-              const storageKey = this.storageService.buildKey(user.id, 'originals', doc.filename);
-              await this.storageService.uploadFile(doc.buffer, storageKey, doc.mimeType);
-              const publicUrl = await this.storageService.getPresignedUrl(storageKey, 7 * 24 * 3600);
-
-              // Preparar extractedData en el formato esperado
-              const extractedData = {
-                summary: `Documento de ejemplo usado para crear el tipo "${consolidated.typeName}"`,
-                fields: doc.fields.map(field => ({
-                  name: field.name,
-                  type: field.type,
-                  label: field.label,
-                  required: field.required,
-                  description: field.description,
-                  value: field.value || null, // valor extraído durante el análisis
-                })),
-              };
-
-              // Guardar en BD como documento real
-              const documentRecord = this.documentRepository.create({
-                userId: user.id,
-                documentTypeId: documentType.id, // Ahora sí existe el documentType
-                filename: doc.filename,
-                googleDriveLink: publicUrl,
-                googleDriveFileId: null,
-                storageKey: storageKey,
-                storageProvider: 'r2',
-                ocrRawText: null, // No usamos OCR separado, Gemini Vision lo procesó
-                extractedData: extractedData,
-                inferredData: null, // No es un documento "Otros"
-                confidenceScore: 0.95, // Alta confianza porque fue usado para crear el tipo
-                status: 'completed',
-              });
-
-              await this.documentRepository.save(documentRecord);
-
-              this.logger.log(`   ✅ Documento "${doc.filename}" subido y guardado en BD (ID: ${documentRecord.id})`);
-            } catch (uploadError) {
-              this.logger.warn(`   ⚠️  Error procesando ${doc.filename}: ${uploadError.message}`);
-            }
-          }
-          
-          this.logger.log(`   ✅ ${consolidated.sampleDocuments.length} documentos subidos y procesados como documentos reales`);
-        }
-
-        // Solo agregar a la respuesta si es un tipo nuevo O si se subieron documentos
-        if (isNewType || (uploadSamples && consolidated.sampleDocuments.length > 0)) {
-          createdTypes.push({
-            id: documentType.id,
-            name: documentType.name,
-            description: isNewType 
-              ? documentType.description 
-              : `${documentType.description} (${consolidated.sampleDocuments.length} documentos agregados)`,
-            fieldCount: consolidated.consolidatedFields.length,
-            sampleDocumentCount: consolidated.sampleCount,
-            googleDriveFolderId: documentType.googleDriveFolderId, // legacy — may be null for R2
-            folderPath: documentType.folderPath,
-            fields: consolidated.consolidatedFields,
-          });
-        }
-      } catch (error) {
-        this.logger.error(`   ❌ Error creando tipo "${consolidated.typeName}": ${error.message}`);
-        throw error;
-      }
-    }
-
-    if (createdTypes.length > 0) {
-      this.logger.log(`✅ ${createdTypes.length} tipo(s) procesado(s) exitosamente`);
-    } else {
-      this.logger.log(`ℹ️  Todos los tipos ya existían y no se subieron documentos`);
-    }
-    
-    return createdTypes;
-  }
-
-  /**
-   * NUEVO: Re-extrae datos de documentos usando un schema consolidado
-   * @param files - Archivos a re-extraer
-   * @param consolidatedSchema - Schema consolidado con campos homologados
-   * @param typeName - Nombre del tipo de documento
-   * @returns Array de extractedData con el schema unificado
-   */
-  private async reExtractWithUnifiedSchema(
-    files: Array<{ buffer: Buffer; filename: string; mimetype: string }>,
+  private async step5_ReExtract(
+    docs: ClassifiedDoc[],
     consolidatedSchema: ConsolidatedField[],
     typeName: string,
-  ): Promise<Array<{ filename: string; extractedData: any }>> {
-    this.logger.log(`🔄 Re-extrayendo ${files.length} documentos con schema unificado...`);
+  ): Promise<Array<{ doc: ClassifiedDoc; extractedData: any; error?: string }>> {
+    this.logger.log(`   🔄 PASO 5: Re-extrayendo ${docs.length} docs con schema unificado (max 3 concurrent)...`);
 
-    // Crear un "pseudo DocumentType" con el schema consolidado
+    // Build a pseudo DocumentType for extraction
     const normalizedFields = consolidatedSchema.map(({ frequency, ...field }) => ({
       name: field.name,
       type: this.normalizeFieldType(field.type),
@@ -529,431 +474,400 @@ Responde SOLO con el JSON, sin texto adicional ni explicaciones.`;
 
     const pseudoType = {
       name: typeName,
-      fieldSchema: {
-        fields: normalizedFields,
-      },
-    };
+      fieldSchema: { fields: normalizedFields },
+    } as DocumentType;
 
-    const results = [];
+    const results = await runWithSemaphore(docs, 3, async (doc, idx) => {
+      this.logger.log(`      📄 [${idx + 1}/${docs.length}] Re-extrayendo "${doc.file.originalname}"...`);
 
-    // Re-extraer cada documento usando el schema unificado
-    for (const file of files) {
-      try {
-        this.logger.log(`   📄 Re-extrayendo: ${file.filename}`);
+      const extractedData = await this.geminiClassifierService.extractDataWithVision(
+        doc.file.buffer,
+        doc.file.mimetype,
+        pseudoType,
+      );
 
-        const extractedData = await this.geminiClassifierService.extractDataWithVision(
-          file.buffer,
-          file.mimetype,
-          pseudoType as any, // Gemini usará este schema para extraer
-        );
+      this.logger.log(`      ✅ [${idx + 1}/${docs.length}] "${doc.file.originalname}": ${extractedData.fields?.length || 0} campos`);
+      return { doc, extractedData };
+    });
 
-        results.push({
-          filename: file.filename,
-          extractedData: extractedData,
+    const extracted: Array<{ doc: ClassifiedDoc; extractedData: any; error?: string }> = [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === 'fulfilled') {
+        extracted.push(r.value);
+      } else {
+        this.logger.error(`      ❌ Re-extracción falló para "${docs[i].file.originalname}": ${r.reason?.message}`);
+        extracted.push({
+          doc: docs[i],
+          extractedData: { summary: 'Error en re-extracción', fields: [] },
+          error: r.reason?.message,
         });
-
-        this.logger.log(`   ✅ Re-extracción completada para ${file.filename}`);
-      } catch (error) {
-        this.logger.error(`   ❌ Error re-extrayendo ${file.filename}: ${error.message}`);
-        throw error;
       }
     }
 
-    return results;
+    return extracted;
   }
 
-  /**
-   * NUEVO: Homologa nombres de tipos similares
-   * @param classifications - Map de clasificaciones iniciales
-   * @returns Map con nombres de tipos homologados
-   */
-  private async homologateTypeNames(
-    classifications: Map<string, { files: Express.Multer.File[]; existingType: DocumentType | null }>,
-  ): Promise<Map<string, { files: Express.Multer.File[]; existingType: DocumentType | null }>> {
-    const typeNames = Array.from(classifications.keys());
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 6: Save to DB + R2
+  // ═══════════════════════════════════════════════════════════════════════════
 
-    // Si solo hay 1 tipo, no hay nada que homologar
-    if (typeNames.length <= 1) {
-      this.logger.log(`   ℹ️  Solo ${typeNames.length} tipo detectado, no requiere homologación de nombres`);
-      return classifications;
+  private async step6_Save(
+    group: TypeGroup,
+    consolidated: ConsolidatedType,
+    reExtracted: Array<{ doc: ClassifiedDoc; extractedData: any; error?: string }>,
+    user: User,
+    uploadSamples: boolean,
+  ): Promise<CreatedDocumentType | null> {
+    this.logger.log(`   💾 PASO 6: Guardando "${group.canonicalName}" en BD + R2...`);
+
+    let documentType: DocumentType;
+    let isNewType = false;
+
+    if (group.existingType) {
+      // Existing type: use its schema
+      documentType = group.existingType;
+      this.logger.log(`   ✅ Tipo "${group.canonicalName}" ya existe (ID: ${documentType.id})`);
+    } else {
+      // New type: create in DB
+      isNewType = true;
+
+      const normalizedFields = consolidated.consolidatedFields.map(({ frequency, ...field }) => ({
+        name: field.name,
+        type: this.normalizeFieldType(field.type),
+        label: field.label,
+        required: field.required,
+        description: field.description,
+      })) as import('../../database/entities/document-type.entity').FieldDefinition[];
+
+      documentType = this.documentTypeRepository.create({
+        userId: user.id,
+        name: group.canonicalName,
+        description: consolidated.description,
+        fieldSchema: { fields: normalizedFields },
+        googleDriveFolderId: null,
+        folderPath: null,
+      });
+
+      await this.documentTypeRepository.save(documentType);
+      this.logger.log(`   ✅ Tipo "${group.canonicalName}" creado (ID: ${documentType.id})`);
     }
 
-    // Filtrar solo tipos nuevos (sin existingType) para homologar
-    const newTypeNames = typeNames.filter(name => !classifications.get(name)?.existingType);
+    // Upload sample documents
+    if (uploadSamples && reExtracted.length > 0) {
+      this.logger.log(`   📤 Subiendo ${reExtracted.length} documentos...`);
 
-    if (newTypeNames.length <= 1) {
-      this.logger.log(`   ℹ️  Solo ${newTypeNames.length} tipo nuevo, no requiere homologación de nombres`);
-      return classifications;
-    }
+      for (const item of reExtracted) {
+        try {
+          const filename = item.doc.file.originalname;
 
-    this.logger.log(`🔀 Homologando ${newTypeNames.length} nombres de tipos nuevos...`);
+          // Upload to R2 in typed folder
+          const storageKey = this.storageService.buildKey(user.id, 'originals', filename);
+          await this.storageService.uploadFile(item.doc.file.buffer, storageKey, item.doc.file.mimetype);
+          const publicUrl = await this.storageService.getPresignedUrl(storageKey, 7 * 24 * 3600);
 
-    const prompt = `Eres un experto en clasificación de documentos.
-
-Tengo estos tipos de documentos NUEVOS identificados:
-${newTypeNames.map((t, i) => `${i + 1}. "${t}"`).join('\n')}
-
-**TAREA:** Agrupa los tipos que son SEMÁNTICAMENTE EQUIVALENTES (mismo tipo de documento con nombres ligeramente diferentes).
-
-**EJEMPLOS DE EQUIVALENCIAS:**
-- "Orden de Compra" ≈ "Orden Compra" ≈ "Purchase Order" → MISMO TIPO
-- "Orden de Retiro" ≈ "Orden de Despacho / Retiro" ≈ "Guía de Retiro" → MISMO TIPO
-- "Factura" ≈ "Invoice" ≈ "Boleta de Venta" → MISMO TIPO
-
-**EJEMPLOS DE NO EQUIVALENCIAS:**
-- "Orden de Compra" ≠ "Factura" → TIPOS DIFERENTES
-- "Contrato de Trabajo" ≠ "Certificado Laboral" → TIPOS DIFERENTES
-
-**INSTRUCCIONES:**
-1. Identifica grupos de tipos que son REALMENTE EQUIVALENTES (mismo documento)
-2. Para cada grupo, elige el nombre MÁS CLARO Y ESPECÍFICO en español
-3. Si un tipo no tiene equivalentes reales, créale su propio grupo
-4. SÉ CONSERVADOR: solo agrupa si estás seguro que son el mismo tipo
-
-**FORMATO DE RESPUESTA (JSON):**
-{
-  "merges": [
-    {
-      "canonical_name": "Nombre definitivo elegido",
-      "variants": ["nombre1", "nombre2"]
-    }
-  ]
-}
-
-Si NO hay tipos equivalentes, responde: {"merges": []}
-
-Responde SOLO con el JSON, sin texto adicional.`;
-
-    try {
-      const homologationResult = await withRetry(async () => {
-        await this.rateLimiter.acquire('gemini');
-        const result = await this.model.generateContent(prompt);
-        const response = result.response.text();
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-          this.logger.warn(`⚠️  No JSON in homologation response`);
-          return { merges: [] };
-        }
-        return JSON.parse(jsonMatch[0]);
-      }, { maxRetries: 2, label: 'Gemini homologate' });
-
-      if (!homologationResult.merges || homologationResult.merges.length === 0) {
-        this.logger.log(`   ✅ No se detectaron tipos equivalentes`);
-        return classifications;
-      }
-
-      this.logger.log(`   🔗 Gemini detectó ${homologationResult.merges.length} fusión(es)`);
-
-      // Crear nuevo Map con tipos fusionados
-      const homologatedMap = new Map<string, { files: Express.Multer.File[]; existingType: DocumentType | null }>();
-
-      // Primero, copiar todos los tipos existentes (no se homologan)
-      for (const [name, data] of classifications.entries()) {
-        if (data.existingType) {
-          homologatedMap.set(name, data);
-        }
-      }
-
-      // Procesar fusiones de tipos nuevos
-      const processedTypes = new Set<string>();
-
-      for (const merge of homologationResult.merges) {
-        const canonicalName = merge.canonical_name;
-        const variants = merge.variants || [];
-
-        this.logger.log(`   🔀 Fusionando: ${variants.join(', ')} → "${canonicalName}"`);
-
-        // Reunir todos los archivos de las variantes
-        const allFiles: Express.Multer.File[] = [];
-
-        for (const variant of variants) {
-          const variantData = classifications.get(variant);
-          if (variantData && !variantData.existingType) {
-            allFiles.push(...variantData.files);
-            processedTypes.add(variant);
-          }
-        }
-
-        if (allFiles.length > 0) {
-          homologatedMap.set(canonicalName, {
-            files: allFiles,
-            existingType: null,
+          const documentRecord = this.documentRepository.create({
+            userId: user.id,
+            documentTypeId: documentType.id,
+            filename,
+            googleDriveLink: publicUrl,
+            googleDriveFileId: null,
+            storageKey,
+            storageProvider: 'r2',
+            ocrRawText: item.doc.ocrText || null,
+            extractedData: item.extractedData,
+            inferredData: null,
+            confidenceScore: item.error ? 0.5 : 0.95,
+            status: item.error ? 'error' : 'completed',
           });
+
+          await this.documentRepository.save(documentRecord);
+          this.logger.log(`      ✅ "${filename}" guardado (ID: ${documentRecord.id})`);
+        } catch (error) {
+          this.logger.error(`      ❌ Error guardando "${item.doc.file.originalname}": ${error.message}`);
         }
       }
-
-      // Agregar tipos nuevos que NO fueron fusionados
-      for (const [name, data] of classifications.entries()) {
-        if (!data.existingType && !processedTypes.has(name)) {
-          homologatedMap.set(name, data);
-        }
-      }
-
-      this.logger.log(`   ✅ Homologación completa: ${classifications.size} → ${homologatedMap.size} tipos`);
-      return homologatedMap;
-
-    } catch (error) {
-      this.logger.error(`❌ Error en homologación de nombres: ${error.message}`);
-      this.logger.warn(`⚠️  Usando nombres originales como fallback`);
-      return classifications;
     }
+
+    return {
+      id: documentType.id,
+      name: documentType.name,
+      description: isNewType ? documentType.description : `${documentType.description} (${reExtracted.length} docs agregados)`,
+      fieldCount: consolidated.consolidatedFields.length,
+      sampleDocumentCount: reExtracted.length,
+      googleDriveFolderId: documentType.googleDriveFolderId,
+      folderPath: documentType.folderPath,
+      fields: consolidated.consolidatedFields,
+    };
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MAIN ORCHESTRATOR
+  // ═══════════════════════════════════════════════════════════════════════════
+
   /**
-   * MÉTODO PRINCIPAL: Orquesta todo el proceso de inferencia
-   * @param files - Archivos de ejemplo (hasta 10)
-   * @param user - Usuario que crea los tipos
-   * @param uploadSamples - Si se deben subir los documentos de ejemplo
-   * @returns Tipos creados
+   * MÉTODO PRINCIPAL: Orquesta todo el proceso de inferencia.
+   *
+   * Pipeline:
+   *   1. OCR en paralelo (max 3)
+   *   2. Clasificar en paralelo (max 5)
+   *   3. Homologar tipos (1 llamada Gemini)
+   *   4. Consolidar schema por grupo
+   *   5. Re-extraer con schema unificado (max 3)
+   *   6. Guardar en BD + R2
    */
   async inferDocumentTypesFromSamples(
     files: Express.Multer.File[],
     user: User,
     uploadSamples: boolean = false,
   ): Promise<CreatedDocumentType[]> {
-    this.logger.log(`🚀 Iniciando inferencia de tipos desde ${files.length} documentos de ejemplo`);
+    const startTime = Date.now();
+    this.logger.log(`🚀 Iniciando pipeline de inferencia: ${files.length} documentos`);
 
-    try {
-      // ========================================================================
-      // PASO 1: Clasificar y agrupar documentos (detectando tipos existentes)
-      // ========================================================================
-      const initialClassifications = await this.classifyAndGroupDocuments(files, user);
+    // Deduplicate files by content
+    const uniqueFiles = this.deduplicateFiles(files);
+    if (uniqueFiles.length < files.length) {
+      this.logger.log(`   📊 ${files.length} → ${uniqueFiles.length} documentos únicos`);
+    }
 
-      // ========================================================================
-      // PASO 2: Homologar nombres de tipos similares (NUEVO)
-      // ========================================================================
-      const classifications = await this.homologateTypeNames(initialClassifications);
+    // Load existing types for matching
+    const existingTypes = await this.documentTypeRepository.find();
 
-      const results: CreatedDocumentType[] = [];
+    // ─── STEP 1: OCR ───
+    const ocrDocs = await this.step1_OCR(uniqueFiles);
 
-      // ========================================================================
-      // PASO 3: Procesar cada grupo (tipos existentes y nuevos)
-      // ========================================================================
-      for (const [typeName, { files: groupFiles, existingType }] of classifications.entries()) {
-        this.logger.log(`\n📦 Procesando grupo "${typeName}" (${groupFiles.length} documentos)...`);
+    // ─── STEP 2: Classify ───
+    const classifiedDocs = await this.step2_Classify(ocrDocs);
 
-        if (existingType) {
-          // ============================================================
-          // TIPO EXISTENTE: Usar schema existente (sin homologación)
-          // ============================================================
-          this.logger.log(`   ✅ Tipo "${typeName}" ya existe. Usando schema existente...`);
+    // ─── STEP 3: Homologate ───
+    const groups = await this.step3_Homologate(classifiedDocs, existingTypes);
 
-          if (uploadSamples) {
-            this.logger.log(`   📤 Subiendo ${groupFiles.length} documentos con schema existente...`);
+    if (groups.length === 0) {
+      this.logger.warn(`⚠️  No se pudieron clasificar documentos`);
+      return [];
+    }
 
-            for (const file of groupFiles) {
-              try {
-                // Extraer datos usando el schema existente (como upload normal)
-                const extractedData = await this.geminiClassifierService.extractDataWithVision(
-                  file.buffer,
-                  file.mimetype,
-                  existingType,
-                );
+    // ─── STEPS 4-6: Per group ───
+    const results: CreatedDocumentType[] = [];
 
-                // Upload to R2 storage
-                const storageKey = this.storageService.buildKey(user.id, 'originals', file.originalname);
-                await this.storageService.uploadFile(file.buffer, storageKey, file.mimetype);
-                const publicUrl = await this.storageService.getPresignedUrl(storageKey, 7 * 24 * 3600);
+    for (const group of groups) {
+      try {
+        this.logger.log(`\n📦 Procesando grupo "${group.canonicalName}" (${group.docs.length} docs)...`);
 
-                // Guardar en BD
-                const documentRecord = this.documentRepository.create({
-                  userId: user.id,
-                  documentTypeId: existingType.id,
-                  filename: file.originalname,
-                  googleDriveLink: publicUrl,
-                  googleDriveFileId: null,
-                  storageKey: storageKey,
-                  storageProvider: 'r2',
-                  ocrRawText: null,
-                  extractedData: extractedData,
-                  inferredData: null,
-                  confidenceScore: 0.95,
-                  status: 'completed',
-                });
+        // STEP 4: Consolidate schema
+        const consolidated = await this.step4_ConsolidateSchema(group.canonicalName, group.docs);
 
-                await this.documentRepository.save(documentRecord);
-                this.logger.log(`   ✅ "${file.originalname}" procesado y guardado (ID: ${documentRecord.id})`);
-              } catch (error) {
-                this.logger.error(`   ❌ Error procesando "${file.originalname}": ${error.message}`);
-              }
-            }
+        // STEP 5: Re-extract with unified schema
+        const reExtracted = await this.step5_ReExtract(
+          group.docs,
+          consolidated.consolidatedFields,
+          group.canonicalName,
+        );
 
-            // Agregar a resultados
-            results.push({
-              id: existingType.id,
-              name: existingType.name,
-              description: `${existingType.description} (${groupFiles.length} documentos agregados)`,
-              fieldCount: existingType.fieldSchema.fields.length,
-              sampleDocumentCount: groupFiles.length,
-              googleDriveFolderId: existingType.googleDriveFolderId, // legacy — may be null for R2
-              folderPath: existingType.folderPath,
-              fields: existingType.fieldSchema.fields.map(f => ({ ...f, frequency: 1.0 })),
+        // STEP 6: Save to DB + R2
+        const result = await this.step6_Save(group, consolidated, reExtracted, user, uploadSamples);
+        if (result) {
+          results.push(result);
+        }
+      } catch (error) {
+        this.logger.error(`❌ Error procesando grupo "${group.canonicalName}": ${error.message}`);
+        // Continue with next group — don't kill the batch
+      }
+    }
+
+    // Report errors
+    const errorDocs = classifiedDocs.filter((d) => d.error || d.inferredType === '__ERROR__');
+    if (errorDocs.length > 0) {
+      this.logger.warn(`⚠️  ${errorDocs.length} documento(s) con errores:`);
+      for (const doc of errorDocs) {
+        this.logger.warn(`   - "${doc.file.originalname}": ${doc.error}`);
+      }
+    }
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    this.logger.log(`\n🎉 Pipeline completado en ${elapsed}s: ${results.length} tipo(s) procesado(s)`);
+    return results;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LEGACY METHODS (kept for backward compat, delegate to new pipeline)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * @deprecated Use inferDocumentTypesFromSamples directly
+   */
+  async classifyAndGroupDocuments(
+    files: Express.Multer.File[],
+    user: User,
+  ): Promise<Map<string, { files: Express.Multer.File[]; existingType: DocumentType | null }>> {
+    this.logger.warn('⚠️  classifyAndGroupDocuments is deprecated — use inferDocumentTypesFromSamples');
+
+    const existingTypes = await this.documentTypeRepository.find();
+    const ocrDocs = await this.step1_OCR(files);
+    const classifiedDocs = await this.step2_Classify(ocrDocs);
+    const groups = await this.step3_Homologate(classifiedDocs, existingTypes);
+
+    const result = new Map<string, { files: Express.Multer.File[]; existingType: DocumentType | null }>();
+    for (const group of groups) {
+      result.set(group.canonicalName, {
+        files: group.docs.map((d) => d.file),
+        existingType: group.existingType,
+      });
+    }
+    return result;
+  }
+
+  /**
+   * @deprecated Use step4_ConsolidateSchema instead
+   */
+  async consolidateFieldsByType(
+    typeName: string,
+    documents: ProcessedDocument[],
+  ): Promise<ConsolidatedType> {
+    this.logger.warn('⚠️  consolidateFieldsByType is deprecated');
+
+    const documentsDescription = documents.map((doc, index) => {
+      const fieldsStr = doc.fields
+        .map((f) => `  - ${f.name} (${f.type}): "${f.label}"${f.required ? ' [REQUERIDO]' : ''}`)
+        .join('\n');
+      return `DOCUMENTO ${index + 1} (${doc.filename}):\n${fieldsStr}`;
+    }).join('\n\n');
+
+    const prompt = `Eres un experto en diseño de schemas de datos.
+
+Tengo ${documents.length} documentos tipo "${typeName}" con estos campos extraídos:
+
+${documentsDescription}
+
+**TAREA:** Consolida estos campos en UN SOLO SCHEMA definitivo para "${typeName}".
+
+**INSTRUCCIONES:**
+1. Identificar campos equivalentes (mismo concepto, nombres diferentes)
+2. Elegir mejor nombre (snake_case, español)
+3. Elegir mejor tipo (string, number, date, boolean, email, phone, currency, array)
+4. required: true si ≥50% de documentos
+5. Máximo 30 campos, ordenados por importancia
+
+**FORMATO JSON:**
+{
+  "typeDescription": "Descripción breve",
+  "consolidatedFields": [
+    {"name":"campo","type":"string","label":"Etiqueta","required":true,"description":"desc","frequency":0.85}
+  ]
+}
+
+JSON only.`;
+
+    const consolidationResult = await withRetry(async () => {
+      await this.rateLimiter.acquire('gemini');
+      const result = await this.model.generateContent(prompt);
+      const response = result.response.text();
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON in consolidation response');
+      return JSON.parse(jsonMatch[0]);
+    }, { maxRetries: 2, label: 'Gemini consolidate-fields' });
+
+    return {
+      typeName,
+      description: consolidationResult.typeDescription || `Tipo "${typeName}"`,
+      consolidatedFields: consolidationResult.consolidatedFields,
+      sampleDocuments: documents,
+      sampleCount: documents.length,
+    };
+  }
+
+  /**
+   * @deprecated Use step6_Save instead
+   */
+  async createDocumentTypesFromInference(
+    consolidatedTypes: ConsolidatedType[],
+    user: User,
+    uploadSamples: boolean = false,
+  ): Promise<CreatedDocumentType[]> {
+    this.logger.warn('⚠️  createDocumentTypesFromInference is deprecated');
+
+    const createdTypes: CreatedDocumentType[] = [];
+
+    for (const consolidated of consolidatedTypes) {
+      const existingType = await this.documentTypeRepository.findOne({
+        where: { name: consolidated.typeName },
+      });
+
+      let documentType: DocumentType;
+      let isNewType = false;
+
+      if (existingType) {
+        if (!uploadSamples || consolidated.sampleDocuments.length === 0) continue;
+        documentType = existingType;
+      } else {
+        isNewType = true;
+
+        const normalizedFields = consolidated.consolidatedFields.map(({ frequency, ...field }) => ({
+          name: field.name,
+          type: this.normalizeFieldType(field.type),
+          label: field.label,
+          required: field.required,
+          description: field.description,
+        })) as import('../../database/entities/document-type.entity').FieldDefinition[];
+
+        documentType = this.documentTypeRepository.create({
+          userId: user.id,
+          name: consolidated.typeName,
+          description: consolidated.description,
+          fieldSchema: { fields: normalizedFields },
+          googleDriveFolderId: null,
+          folderPath: null,
+        });
+
+        await this.documentTypeRepository.save(documentType);
+      }
+
+      if (uploadSamples) {
+        for (const doc of consolidated.sampleDocuments) {
+          try {
+            const storageKey = this.storageService.buildKey(user.id, 'originals', doc.filename);
+            await this.storageService.uploadFile(doc.buffer, storageKey, doc.mimeType);
+            const publicUrl = await this.storageService.getPresignedUrl(storageKey, 7 * 24 * 3600);
+
+            const documentRecord = this.documentRepository.create({
+              userId: user.id,
+              documentTypeId: documentType.id,
+              filename: doc.filename,
+              googleDriveLink: publicUrl,
+              googleDriveFileId: null,
+              storageKey,
+              storageProvider: 'r2',
+              ocrRawText: null,
+              extractedData: {
+                summary: `Documento de ejemplo para "${consolidated.typeName}"`,
+                fields: doc.fields.map((f) => ({ ...f, value: f.value || null })),
+              },
+              inferredData: null,
+              confidenceScore: 0.95,
+              status: 'completed',
             });
-          } else {
-            this.logger.log(`   ⏭️  Documentos no se subirán (uploadSamples = false)`);
+
+            await this.documentRepository.save(documentRecord);
+          } catch (err) {
+            this.logger.warn(`⚠️  Error procesando ${doc.filename}: ${err.message}`);
           }
-
-        } else {
-          // ============================================================
-          // TIPO NUEVO: Hacer consolidación completa + re-extracción
-          // ============================================================
-          this.logger.log(`   🆕 Tipo "${typeName}" es nuevo. Iniciando proceso de consolidación...`);
-
-          // ============================================================
-          // PASO 3: Extracción inicial de campos de cada documento
-          // ============================================================
-          this.logger.log(`   📊 Extrayendo campos de ${groupFiles.length} documentos...`);
-          const processedDocs: ProcessedDocument[] = [];
-          
-          for (const file of groupFiles) {
-            try {
-              this.logger.log(`      📄 Extrayendo campos de "${file.originalname}"...`);
-              const inferredData = await this.geminiClassifierService.inferFieldsForUnclassifiedWithVision(
-                file.buffer,
-                file.mimetype,
-              );
-
-              processedDocs.push({
-                filename: file.originalname,
-                inferredType: typeName,
-                fields: inferredData.key_fields,
-                buffer: file.buffer,
-                mimeType: file.mimetype,
-              });
-              
-              this.logger.log(`      ✅ Extraídos ${inferredData.key_fields.length} campos de "${file.originalname}"`);
-            } catch (error) {
-              this.logger.error(`      ❌ Error extrayendo campos de "${file.originalname}": ${error.message}`);
-            }
-          }
-
-          if (processedDocs.length === 0) {
-            this.logger.error(`   ❌ No se pudo extraer campos de ningún documento del tipo "${typeName}"`);
-            continue;
-          }
-
-          // ============================================================
-          // PASO 4: Consolidación y homologación de campos
-          // ============================================================
-          this.logger.log(`   🔧 Consolidando campos de ${processedDocs.length} documentos...`);
-          const consolidated = await this.consolidateFieldsByType(typeName, processedDocs);
-          this.logger.log(`   ✅ Schema consolidado: ${consolidated.consolidatedFields.length} campos únicos`);
-
-          // ============================================================
-          // PASO 5: Re-extracción con schema unificado (NUEVO)
-          // ============================================================
-          let reExtractedData: Array<{ filename: string; extractedData: any }> = [];
-          
-          if (uploadSamples && processedDocs.length > 0) {
-            this.logger.log(`   🔄 Re-extrayendo datos con schema consolidado...`);
-            
-            reExtractedData = await this.reExtractWithUnifiedSchema(
-              processedDocs.map(doc => ({
-                buffer: doc.buffer,
-                filename: doc.filename,
-                mimetype: doc.mimeType,
-              })),
-              consolidated.consolidatedFields,
-              typeName,
-            );
-            
-            this.logger.log(`   ✅ Re-extracción completada: ${reExtractedData.length} documentos procesados`);
-          }
-
-          // ============================================================
-          // Crear tipo en BD (R2 uses virtual folder paths)
-          // ============================================================
-          // R2 storage uses virtual folder paths — no physical folder creation needed
-          this.logger.log(`   📂 R2: Using virtual folder for "${typeName}"`);
-
-          this.logger.log(`   💾 Guardando tipo en base de datos...`);
-          
-          // Normalizar tipos de campos antes de guardar
-          const normalizedFields = consolidated.consolidatedFields.map(({ frequency, ...field }) => ({
-            name: field.name,
-            type: this.normalizeFieldType(field.type),
-            label: field.label,
-            required: field.required,
-            description: field.description,
-          })) as import('../../database/entities/document-type.entity').FieldDefinition[];
-
-          const documentType = this.documentTypeRepository.create({
-            userId: user.id,
-            name: typeName,
-            description: consolidated.description,
-            fieldSchema: {
-              fields: normalizedFields,
-            },
-            googleDriveFolderId: null, // R2 — no Drive folder
-            folderPath: null,
-          });
-
-          await this.documentTypeRepository.save(documentType);
-          this.logger.log(`   ✅ Tipo "${typeName}" creado (ID: ${documentType.id})`);
-
-          // ============================================================
-          // Subir documentos con datos RE-EXTRAÍDOS (schema unificado)
-          // ============================================================
-          if (uploadSamples && reExtractedData.length > 0) {
-            this.logger.log(`   📤 Subiendo ${reExtractedData.length} documentos con datos unificados...`);
-
-            for (let i = 0; i < reExtractedData.length; i++) {
-              const reExtracted = reExtractedData[i];
-              const originalDoc = processedDocs[i];
-
-              try {
-                // Upload to R2 storage
-                const storageKey = this.storageService.buildKey(user.id, 'originals', originalDoc.filename);
-                await this.storageService.uploadFile(originalDoc.buffer, storageKey, originalDoc.mimeType);
-                const publicUrl = await this.storageService.getPresignedUrl(storageKey, 7 * 24 * 3600);
-
-                // Guardar en BD con datos RE-EXTRAÍDOS (schema unificado)
-                const documentRecord = this.documentRepository.create({
-                  userId: user.id,
-                  documentTypeId: documentType.id,
-                  filename: originalDoc.filename,
-                  googleDriveLink: publicUrl,
-                  googleDriveFileId: null,
-                  storageKey: storageKey,
-                  storageProvider: 'r2',
-                  ocrRawText: null,
-                  extractedData: reExtracted.extractedData, // ✅ Datos con schema unificado
-                  inferredData: null,
-                  confidenceScore: 0.95,
-                  status: 'completed',
-                });
-
-                await this.documentRepository.save(documentRecord);
-                this.logger.log(`      ✅ "${originalDoc.filename}" guardado (ID: ${documentRecord.id})`);
-              } catch (error) {
-                this.logger.error(`      ❌ Error guardando "${originalDoc.filename}": ${error.message}`);
-              }
-            }
-            
-            this.logger.log(`   ✅ Todos los documentos subidos con schema unificado`);
-          }
-
-          // Agregar a resultados
-          results.push({
-            id: documentType.id,
-            name: documentType.name,
-            description: documentType.description,
-            fieldCount: consolidated.consolidatedFields.length,
-            sampleDocumentCount: processedDocs.length,
-            googleDriveFolderId: documentType.googleDriveFolderId, // legacy — may be null for R2
-            folderPath: documentType.folderPath,
-            fields: consolidated.consolidatedFields,
-          });
         }
       }
 
-      this.logger.log(`\n🎉 Proceso completado: ${results.length} tipo(s) procesado(s)`);
-      return results;
-    } catch (error) {
-      this.logger.error(`❌ Error en proceso de inferencia: ${error.message}`, error.stack);
-      throw error;
+      if (isNewType || uploadSamples) {
+        createdTypes.push({
+          id: documentType.id,
+          name: documentType.name,
+          description: documentType.description,
+          fieldCount: consolidated.consolidatedFields.length,
+          sampleDocumentCount: consolidated.sampleCount,
+          googleDriveFolderId: documentType.googleDriveFolderId,
+          folderPath: documentType.folderPath,
+          fields: consolidated.consolidatedFields,
+        });
+      }
     }
+
+    return createdTypes;
   }
 }
-
-

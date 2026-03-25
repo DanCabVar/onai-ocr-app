@@ -418,6 +418,85 @@ Observe layout carefully: extract values next to labels. For amounts, include fu
   }
 
   /**
+   * Homologate type names: group similar/equivalent document type names
+   * into canonical groups with a single Gemini call.
+   *
+   * @param typeNames - Array of inferred type names (e.g. ["Factura de Servicio Móvil", "Boleta Electrónica", "Factura"])
+   * @returns Map of canonical name → array of variant names that belong to it
+   *          e.g. { "Factura": ["Factura de Servicio Móvil", "Factura"], "Boleta": ["Boleta Electrónica"] }
+   */
+  async homologateTypes(typeNames: string[]): Promise<Record<string, string[]>> {
+    if (typeNames.length <= 1) {
+      // Nothing to homologate
+      const result: Record<string, string[]> = {};
+      if (typeNames.length === 1) result[typeNames[0]] = [typeNames[0]];
+      return result;
+    }
+
+    this.logger.log(`🔀 Homologando ${typeNames.length} tipos: ${typeNames.join(', ')}`);
+
+    const prompt = `Eres un experto en clasificación de documentos.
+
+Tengo estos tipos de documentos identificados por IA:
+${typeNames.map((t, i) => `${i + 1}. "${t}"`).join('\n')}
+
+**TAREA:** Agrupa los tipos que son SEMÁNTICAMENTE EQUIVALENTES (mismo tipo de documento con nombres diferentes).
+
+**EJEMPLOS:**
+- "Factura de Servicio Móvil" y "Factura" → grupo "Factura"
+- "Boleta Electrónica de Servicio" y "Boleta" → grupo "Boleta"  
+- "Orden de Compra" y "Purchase Order" → grupo "Orden de Compra"
+- "Factura" y "Boleta" → TIPOS DIFERENTES, NO agrupar
+
+**REGLAS:**
+- Solo agrupar si son REALMENTE el mismo tipo de documento
+- El nombre canónico debe ser corto y en español
+- Si un tipo no tiene equivalentes, créale su propio grupo
+- SÉ CONSERVADOR: no agrupes tipos diferentes
+
+**FORMATO JSON:**
+{
+  "groups": {
+    "Nombre Canónico": ["variante1", "variante2"],
+    "Otro Tipo": ["variante3"]
+  }
+}
+
+IMPORTANTE: Cada tipo de la lista original DEBE aparecer en exactamente UN grupo.
+JSON only, sin texto adicional.`;
+
+    return withRetry(
+      async () => {
+        await this.rateLimiter.acquire('gemini');
+
+        const result = await this.model.generateContent(prompt);
+        const response = result.response.text();
+        const parsed = this.parseGeminiJSON(response);
+
+        // Validate: ensure all input types are accounted for
+        const groups: Record<string, string[]> = parsed.groups || {};
+        const covered = new Set<string>();
+        for (const variants of Object.values(groups)) {
+          for (const v of variants as string[]) {
+            covered.add(v);
+          }
+        }
+
+        // Add any missing types as their own group
+        for (const t of typeNames) {
+          if (!covered.has(t)) {
+            groups[t] = [t];
+          }
+        }
+
+        this.logger.log(`✅ Homologación: ${Object.keys(groups).length} grupos canónicos`);
+        return groups;
+      },
+      { maxRetries: 2, label: 'Gemini homologate-types' },
+    );
+  }
+
+  /**
    * Infer fields for unclassified documents from OCR text.
    */
   async inferFieldsForUnclassified(ocrText: string): Promise<InferredFieldsResult> {
