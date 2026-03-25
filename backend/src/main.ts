@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import { GlobalExceptionFilter } from './common/filters/ai-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -24,6 +25,9 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  // Global exception filter (converts AI errors to proper HTTP codes)
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Prefijo global para las rutas
   app.setGlobalPrefix('api');
