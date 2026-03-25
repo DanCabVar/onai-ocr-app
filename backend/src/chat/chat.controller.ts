@@ -1,5 +1,5 @@
 import { Controller, Post, Body, UseGuards } from '@nestjs/common';
-import { ChatService } from './chat.service';
+import { ChatService, ChatQueryResult } from './chat.service';
 import { QueryDto } from './dto/query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -11,8 +11,10 @@ export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
   @Post('query')
-  async query(@Body() queryDto: QueryDto, @CurrentUser() user: User) {
+  async query(
+    @Body() queryDto: QueryDto,
+    @CurrentUser() user: User,
+  ): Promise<ChatQueryResult> {
     return this.chatService.getQueryResponse(queryDto, user);
   }
 }
-
