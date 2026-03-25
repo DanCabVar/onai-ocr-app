@@ -36,8 +36,8 @@ export interface ProcessingResult {
 export class DocumentProcessingService {
   private readonly logger = new Logger(DocumentProcessingService.name);
 
-  /** In-memory cache of document types (avoids DB query per upload) */
-  private documentTypesCache: { data: DocumentType[]; timestamp: number } | null = null;
+  /** In-memory cache of document types per user (avoids DB query per upload) */
+  private documentTypesCache: Map<number, { data: DocumentType[]; timestamp: number }> = new Map();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   constructor(
@@ -53,18 +53,19 @@ export class DocumentProcessingService {
     private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
-  private async getAvailableTypes(): Promise<DocumentType[]> {
+  private async getAvailableTypes(userId: number): Promise<DocumentType[]> {
     const now = Date.now();
-    if (this.documentTypesCache && (now - this.documentTypesCache.timestamp) < this.CACHE_TTL) {
-      return this.documentTypesCache.data;
+    const cached = this.documentTypesCache.get(userId);
+    if (cached && (now - cached.timestamp) < this.CACHE_TTL) {
+      return cached.data;
     }
-    const types = await this.documentTypeRepository.find();
-    this.documentTypesCache = { data: types, timestamp: now };
+    const types = await this.documentTypeRepository.find({ where: { userId } });
+    this.documentTypesCache.set(userId, { data: types, timestamp: now });
     return types;
   }
 
   public invalidateTypesCache(): void {
-    this.documentTypesCache = null;
+    this.documentTypesCache.clear();
   }
 
   /**
@@ -120,7 +121,7 @@ export class DocumentProcessingService {
         // Cache miss — run OCR and load types in parallel
         const [freshOCR, availableTypesPreload] = await Promise.all([
           this.mistralOCRService.extractTextSmart(presignedUrl, mimeType),
-          this.getAvailableTypes(),
+          this.getAvailableTypes(user.id),
         ]);
         ocrResult = {
           text: freshOCR.text,
@@ -139,7 +140,7 @@ export class DocumentProcessingService {
       this.logger.log(`✅ OCR: ${ocrResult.text.length} chars`);
 
       // Load available types (may already be loaded in parallel above)
-      const availableTypes = await this.getAvailableTypes();
+      const availableTypes = await this.getAvailableTypes(user.id);
       if (availableTypes.length === 0) {
         throw new Error(
           'No hay tipos de documento configurados. Crea al menos un tipo antes de subir documentos.',
@@ -301,9 +302,9 @@ export class DocumentProcessingService {
   private async getOrCreateOthersType(user: User): Promise<DocumentType> {
     const othersName = process.env.OTHERS_FOLDER_NAME || 'Otros Documentos';
 
-    // Fast path: already exists
+    // Fast path: already exists for this user
     const existing = await this.documentTypeRepository.findOne({
-      where: { name: othersName },
+      where: { name: othersName, userId: user.id },
     });
     if (existing) return existing;
 
@@ -318,9 +319,9 @@ export class DocumentProcessingService {
       // 0x4F54524F53 = "OTROS" in hex, truncated to 32-bit int
       await queryRunner.query('SELECT pg_advisory_xact_lock(1330857043)');
 
-      // Double-check inside the lock
+      // Double-check inside the lock (scoped to this user)
       const locked = await queryRunner.manager.findOne(DocumentType, {
-        where: { name: othersName },
+        where: { name: othersName, userId: user.id },
       });
       if (locked) {
         await queryRunner.commitTransaction();
@@ -378,7 +379,7 @@ export class DocumentProcessingService {
 
       // Final fallback: maybe another transaction created it
       const fallback = await this.documentTypeRepository.findOne({
-        where: { name: othersName },
+        where: { name: othersName, userId: user.id },
       });
       if (fallback) return fallback;
 
