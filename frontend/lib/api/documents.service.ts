@@ -17,6 +17,32 @@ export interface DocumentUploadResponse {
   createdOthersFolder: boolean;
 }
 
+export interface BatchDocumentResult {
+  filename: string;
+  status: 'completed' | 'pending_confirmation' | 'error';
+  document?: DocumentUploadResponse['document'];
+  wasClassified?: boolean;
+  suggestedType?: string;
+  documentId?: number;
+  error?: string;
+}
+
+export interface BatchUploadResponse {
+  success: boolean;
+  message: string;
+  results: BatchDocumentResult[];
+  totalProcessed: number;
+  totalSuccess: number;
+  totalPending: number;
+  totalErrors: number;
+}
+
+export interface ConfirmTypeResponse {
+  success: boolean;
+  message: string;
+  document?: DocumentUploadResponse['document'];
+}
+
 export interface DocumentField {
   name: string;
   type: string;
@@ -77,6 +103,50 @@ export const documentsService = {
       },
     });
 
+    return response.data;
+  },
+
+  /**
+   * Sube múltiples documentos en lote y los procesa
+   */
+  async uploadBatch(
+    files: File[],
+    onUploadProgress?: (percent: number) => void,
+  ): Promise<BatchUploadResponse> {
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+
+    const response = await apiClient.post<BatchUploadResponse>('/documents/upload-batch', formData, {
+      headers: {
+        'Content-Type': undefined as any,
+      },
+      timeout: 300000, // 5 minutos para lotes grandes
+      onUploadProgress: (progressEvent) => {
+        if (onUploadProgress && progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onUploadProgress(percent);
+        }
+      },
+    });
+
+    return response.data;
+  },
+
+  /**
+   * Confirma o cancela un tipo sugerido para un documento pendiente
+   */
+  async confirmType(
+    documentId: number,
+    action: 'confirm' | 'cancel',
+    typeName?: string,
+  ): Promise<ConfirmTypeResponse> {
+    const response = await apiClient.post<ConfirmTypeResponse>('/documents/confirm-type', {
+      documentId,
+      action,
+      typeName,
+    });
     return response.data;
   },
 

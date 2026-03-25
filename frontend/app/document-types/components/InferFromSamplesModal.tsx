@@ -311,78 +311,75 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
 
           {/* ESTADO: PROCESSING */}
           {state === 'processing' && (
-            <div className="py-12 space-y-6">
+            <div className="py-8 space-y-6">
               <div className="text-center">
-                <Loader2 className="h-16 w-16 mx-auto mb-4 text-primary animate-spin" />
-                <h3 className="text-lg font-semibold mb-2">Analizando documentos...</h3>
+                <Loader2 className="h-14 w-14 mx-auto mb-4 text-primary animate-spin" />
+                <h3 className="text-lg font-semibold mb-2">Analizando {files.length} documento(s)...</h3>
                 <p className="text-sm text-muted-foreground mb-2">
-                  Esto puede tomar {getEstimatedTime(files.length)}. Por favor espera.
+                  Tiempo estimado: {getEstimatedTime(files.length)}
                 </p>
                 {progressMessage && (
-                  <p className="text-sm font-medium text-primary">{progressMessage}</p>
+                  <p className="text-sm font-medium text-primary mt-1">{progressMessage}</p>
                 )}
               </div>
 
               <div className="space-y-3">
-                <Progress value={progress} className="h-2" />
-                <p className="text-xs text-muted-foreground text-center">{progress}%</p>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    {progress >= 10 ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    )}
-                    <span>Validando archivos...</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {progress >= 25 ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    ) : progress >= 10 ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <div className="h-4 w-4" />
-                    )}
-                    <span className={progress < 10 ? 'text-muted-foreground' : ''}>
-                      Clasificando y extrayendo campos...
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {progress >= 40 ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    ) : progress >= 25 ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <div className="h-4 w-4" />
-                    )}
-                    <span className={progress < 25 ? 'text-muted-foreground' : ''}>
-                      Homologando tipos de documento...
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {progress >= 70 ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    ) : progress >= 40 ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <div className="h-4 w-4" />
-                    )}
-                    <span className={progress < 40 ? 'text-muted-foreground' : ''}>
-                      Consolidando schemas y re-extrayendo...
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {progress >= 90 ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    ) : progress >= 70 ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <div className="h-4 w-4" />
-                    )}
-                    <span className={progress < 70 ? 'text-muted-foreground' : ''}>
-                      Guardando en el sistema...
-                    </span>
-                  </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Progreso global</span>
+                  <span className="text-xs font-mono text-muted-foreground">{progress}%</span>
+                </div>
+                <Progress value={progress} className="h-2.5" />
+
+                {/* Per-file progress indicators */}
+                <div className="space-y-1.5 mt-4 max-h-32 overflow-y-auto">
+                  {files.map((file, idx) => {
+                    const fileProgress = Math.min(100, Math.max(0, (progress - (idx * (100 / files.length))) * (files.length)))
+                    const isDone = fileProgress >= 100
+                    const isActive = fileProgress > 0 && fileProgress < 100
+                    return (
+                      <div key={idx} className="flex items-center gap-2 px-2 py-1 rounded bg-muted/30">
+                        {isDone ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                        ) : isActive ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary flex-shrink-0" />
+                        ) : (
+                          <div className="h-3.5 w-3.5 rounded-full border border-muted-foreground/30 flex-shrink-0" />
+                        )}
+                        <span className={`text-xs truncate flex-1 ${isDone ? 'text-green-600 dark:text-green-400' : isActive ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                          {file.name}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Processing stages */}
+                <div className="space-y-2 text-sm pt-2 border-t border-border mt-3">
+                  {[
+                    { threshold: 10, label: 'Validando archivos...' },
+                    { threshold: 25, label: 'Clasificando y extrayendo campos...' },
+                    { threshold: 40, label: 'Homologando tipos de documento...' },
+                    { threshold: 70, label: 'Consolidando schemas y re-extrayendo...' },
+                    { threshold: 90, label: 'Guardando en el sistema...' },
+                  ].map((step, idx, arr) => {
+                    const prevThreshold = idx > 0 ? arr[idx - 1].threshold : 0
+                    const isCompleted = progress >= step.threshold
+                    const isActive = progress >= prevThreshold && progress < step.threshold
+                    return (
+                      <div key={idx} className="flex items-center gap-2">
+                        {isCompleted ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        ) : isActive ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        ) : (
+                          <div className="h-4 w-4" />
+                        )}
+                        <span className={!isCompleted && !isActive ? 'text-muted-foreground' : isActive ? 'font-medium' : 'text-green-600 dark:text-green-400'}>
+                          {step.label}
+                        </span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             </div>
