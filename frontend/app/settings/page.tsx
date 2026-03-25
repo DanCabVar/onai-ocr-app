@@ -111,6 +111,7 @@ export default function SettingsPage() {
   const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [plans, setPlans] = useState<Plan[]>(DEFAULT_PLANS)
   const [loadingSub, setLoadingSub] = useState(false)
+  const [upgradingPlan, setUpgradingPlan] = useState<string | null>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -162,6 +163,25 @@ export default function SettingsPage() {
       }
     } catch {
       // Keep default plans
+    }
+  }
+
+  const handleUpgrade = async (planId: string) => {
+    setUpgradingPlan(planId)
+    try {
+      const response = await apiClient.post("/stripe/create-checkout", { plan: planId })
+      const { url } = response.data
+      if (url) {
+        window.location.href = url
+      } else {
+        toast({ title: "Error", description: "No se pudo iniciar el checkout.", variant: "destructive" })
+      }
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || "No se pudo conectar con el servicio de pagos."
+      // If Stripe is not configured, the backend will return an error
+      toast({ title: "Error", description: msg, variant: "destructive" })
+    } finally {
+      setUpgradingPlan(null)
     }
   }
 
@@ -439,7 +459,7 @@ export default function SettingsPage() {
           {/* Planes disponibles */}
           <div>
             <h3 className="text-lg font-semibold mb-4">Planes disponibles</h3>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               {plans.map((plan) => {
                 const isCurrent = subscription?.plan?.toUpperCase() === plan.name.toUpperCase()
                 const currentPlanIndex = plans.findIndex(
@@ -447,6 +467,7 @@ export default function SettingsPage() {
                 )
                 const planIndex = plans.findIndex((p) => p.id === plan.id)
                 const isUpgrade = planIndex > currentPlanIndex
+                const isEnterprise = plan.id === "enterprise"
 
                 return (
                   <Card
@@ -500,20 +521,31 @@ export default function SettingsPage() {
                         <Button variant="outline" className="w-full" disabled>
                           Plan actual
                         </Button>
+                      ) : isEnterprise ? (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          asChild
+                        >
+                          <a href="mailto:contacto@onaiconsulting.cl">
+                            <span className="sm:hidden">Contacto</span>
+                            <span className="hidden sm:inline">Contáctenos</span>
+                          </a>
+                        </Button>
                       ) : isUpgrade ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="w-full">
-                              <Button className="w-full" disabled>
-                                <Crown className="mr-2 h-4 w-4" />
-                                Upgrade
-                              </Button>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Próximamente</p>
-                          </TooltipContent>
-                        </Tooltip>
+                        <Button
+                          className="w-full"
+                          onClick={() => handleUpgrade(plan.id)}
+                          disabled={upgradingPlan === plan.id}
+                        >
+                          {upgradingPlan === plan.id ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Crown className="mr-2 h-4 w-4" />
+                          )}
+                          <span className="sm:hidden">Upgrade</span>
+                          <span className="hidden sm:inline">Actualizar a {plan.name}</span>
+                        </Button>
                       ) : (
                         <Button variant="ghost" className="w-full" disabled>
                           —

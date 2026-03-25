@@ -22,9 +22,9 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, {
   maxFileSizeMb: number;
   batchInferMax: number;
 }> = {
-  free:       { docsPerMonth: 20,    docTypesMax: 3,   maxFileSizeMb: 5,  batchInferMax: 5  },
-  starter:    { docsPerMonth: 200,   docTypesMax: 10,  maxFileSizeMb: 10, batchInferMax: 10 },
-  pro:        { docsPerMonth: 2000,  docTypesMax: 50,  maxFileSizeMb: 25, batchInferMax: 10 },
+  free:       { docsPerMonth: 50,    docTypesMax: 1,   maxFileSizeMb: 5,  batchInferMax: 5  },
+  starter:    { docsPerMonth: 500,   docTypesMax: 10,  maxFileSizeMb: 10, batchInferMax: 10 },
+  pro:        { docsPerMonth: 1000,  docTypesMax: -1,  maxFileSizeMb: 25, batchInferMax: 10 },
   enterprise: { docsPerMonth: -1,    docTypesMax: -1,  maxFileSizeMb: 50, batchInferMax: 10 },
 };
 
