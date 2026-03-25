@@ -300,38 +300,22 @@ export class DocumentProcessingService {
 
       // ─── PASO 7: Save to database ───
       const dbMetric = this.metrics.startStage(ctx, 'save-db');
-      let document: Document;
+      const document = this.documentRepository.create({
+        userId: user.id,
+        documentTypeId: documentType.id,
+        filename: originalName,
+        storageKey: originalKey,
+        storageProvider: 'r2',
+        googleDriveLink: viewUrl,
+        googleDriveFileId: null,
+        ocrRawText: ocrResult.text,
+        extractedData,
+        inferredData: classification.isOthers ? inferredData : null,
+        confidenceScore: classification.confidence,
+        status: 'completed',
+      });
 
-      if (existingDocId) {
-        // Update existing document record (async processing path)
-        await this.documentRepository.update(existingDocId, {
-          documentTypeId: documentType.id,
-          googleDriveLink: viewUrl,
-          googleDriveFileId: null,
-          ocrRawText: ocrResult.text,
-          extractedData,
-          inferredData: classification.isOthers ? inferredData : null,
-          confidenceScore: classification.confidence,
-          status: 'completed',
-        });
-        document = await this.documentRepository.findOne({ where: { id: existingDocId } });
-      } else {
-        document = this.documentRepository.create({
-          userId: user.id,
-          documentTypeId: documentType.id,
-          filename: originalName,
-          storageKey: originalKey,
-          storageProvider: 'r2',
-          googleDriveLink: viewUrl,
-          googleDriveFileId: null,
-          ocrRawText: ocrResult.text,
-          extractedData,
-          inferredData: classification.isOthers ? inferredData : null,
-          confidenceScore: classification.confidence,
-          status: 'completed',
-        });
-        await this.documentRepository.save(document);
-      }
+      await this.documentRepository.save(document);
       this.metrics.endStage(dbMetric);
 
       // ─── Finalize metrics ───

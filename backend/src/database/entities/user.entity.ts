@@ -26,6 +26,15 @@ export class User {
   @Column({ nullable: true })
   name: string;
 
+  @Column({ name: 'email_verified', default: false })
+  emailVerified: boolean;
+
+  @Column({ name: 'verification_code', nullable: true, type: 'varchar' })
+  verificationCode: string | null;
+
+  @Column({ name: 'verification_code_expires_at', type: 'timestamptz', nullable: true })
+  verificationCodeExpiresAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
