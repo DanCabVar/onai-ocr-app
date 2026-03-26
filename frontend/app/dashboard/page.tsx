@@ -728,7 +728,7 @@ export default function DashboardPage() {
             <Bot className="!h-11 !w-11" />
           </Button>
         ) : (
-          <Card className="w-[calc(100vw-2rem)] sm:w-96 h-[50vh] sm:h-[450px] flex flex-col shadow-2xl overflow-hidden">
+          <Card className="w-[calc(100vw-2rem)] sm:w-96 h-[45vh] sm:h-[420px] flex flex-col shadow-2xl overflow-hidden">
             <div className="p-4 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Bot className="h-5 w-5 text-primary" />
