@@ -709,7 +709,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Chat flotante - burbuja en esquina inferior derecha (kept from original) */}
-      <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50" style={{ maxWidth: 'calc(100vw - 2rem)' }}>
+      <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50" style={{ maxWidth: 'calc(100vw - 2rem)' }}>
         {!messages.length && !isProcessing ? (
           <Button
             className="!h-16 !w-16 !p-0 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center"
@@ -728,7 +728,7 @@ export default function DashboardPage() {
             <Bot className="!h-11 !w-11" />
           </Button>
         ) : (
-          <Card className="w-[calc(100vw-2rem)] sm:w-96 h-[45vh] sm:h-[420px] flex flex-col shadow-2xl overflow-hidden">
+          <Card className="w-[calc(100vw-2rem)] sm:w-96 h-[45vh] sm:h-[420px] flex flex-col shadow-2xl" style={{ overflow: 'hidden' }}>
             <div className="p-4 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Bot className="h-5 w-5 text-primary" />
@@ -746,7 +746,7 @@ export default function DashboardPage() {
               </Button>
             </div>
 
-            <ScrollArea className="flex-1 p-4">
+            <div className="flex-1 overflow-y-auto p-4" style={{ minHeight: 0 }}>
               <div className="space-y-4">
                 {messages.map((message) => (
                   <div
@@ -847,7 +847,7 @@ export default function DashboardPage() {
                   </div>
                 )}
               </div>
-            </ScrollArea>
+            </div>
 
             <div className="p-4 border-t border-border">
               <form
