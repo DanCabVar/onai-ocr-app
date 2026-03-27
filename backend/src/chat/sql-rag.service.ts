@@ -442,32 +442,73 @@ Formatea una respuesta clara y concisa EN ESPAÑOL:
   private formatRowsLocally(rows: Record<string, any>[]): string {
     if (rows.length === 0) return 'Sin resultados.';
 
-    const keys = Object.keys(rows[0]);
+    // Internal fields that should never be shown to the user
+    const HIDDEN_FIELDS = new Set([
+      'id', 'user_id', 'userId', 'confidence_score', 'confidenceScore',
+      'storage_path', 'storagePath', 'google_drive_link', 'googleDriveLink',
+      'extracted_data', 'extractedData', 'raw_text', 'rawText',
+    ]);
+
+    // Timestamp-like fields: epoch ms (>1e12) or known date columns
+    const TIMESTAMP_FIELDS = new Set([
+      'created_at', 'createdAt', 'updated_at', 'updatedAt',
+      'processed_at', 'processedAt', 'period_end', 'periodEnd',
+    ]);
+
+    const formatValue = (k: string, v: any): string => {
+      if (v === null || v === undefined) return '—';
+
+      // Format epoch milliseconds as readable dates
+      if (TIMESTAMP_FIELDS.has(k)) {
+        const ms = Number(v);
+        if (!isNaN(ms) && ms > 1e12) {
+          return new Date(ms).toLocaleDateString('es-CL', {
+            year: 'numeric', month: 'long', day: 'numeric',
+          });
+        }
+        // ISO string or other date format
+        const d = new Date(String(v));
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleDateString('es-CL', {
+            year: 'numeric', month: 'long', day: 'numeric',
+          });
+        }
+      }
+
+      // Format numeric values (but NOT timestamps that look numeric)
+      const num = Number(v);
+      if (!isNaN(num) && String(v).trim() !== '' && !TIMESTAMP_FIELDS.has(k)) {
+        // Only format as number if it's a reasonable magnitude (not epoch ms)
+        if (Math.abs(num) < 1e12) {
+          return num.toLocaleString('es-CL');
+        }
+      }
+
+      return String(v);
+    };
+
+    const allKeys = Object.keys(rows[0]);
+    const keys = allKeys.filter((k) => !HIDDEN_FIELDS.has(k));
+
+    // If all keys were hidden, fall back to showing all
+    const displayKeys = keys.length > 0 ? keys : allKeys;
 
     // Single column — just list values
-    if (keys.length === 1) {
-      const key = keys[0].replace(/_/g, ' ');
-      const values = rows.map((r) => {
-        const v = Object.values(r)[0];
-        if (v === null || v === undefined) return '—';
-        const num = Number(v);
-        return !isNaN(num) ? num.toLocaleString('es-CL') : String(v);
-      });
+    if (displayKeys.length === 1) {
+      const key = displayKeys[0].replace(/_/g, ' ');
+      const values = rows.map((r) => formatValue(displayKeys[0], r[displayKeys[0]]));
       return `${key}:\n${values.map((v) => `• ${v}`).join('\n')}`;
     }
 
     // Multiple columns — key: value per row
     return rows
       .map((row, i) => {
-        const parts = keys.map((k) => {
-          const v = row[k];
-          const display =
-            v === null || v === undefined
-              ? '—'
-              : !isNaN(Number(v)) && String(v).trim() !== ''
-                ? Number(v).toLocaleString('es-CL')
-                : String(v);
-          return `  ${k.replace(/_/g, ' ')}: ${display}`;
+        const parts = displayKeys.map((k) => {
+          const label = k
+            .replace(/_/g, ' ')
+            .replace(/([a-z])([A-Z])/g, '$1 $2')
+            .toLowerCase();
+          return `  ${label}: ${formatValue(k, row[k])}`;
         });
         return `${i + 1}. ${parts.join('\n')}`;
       })
