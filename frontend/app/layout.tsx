@@ -15,6 +15,13 @@ export const metadata: Metadata = {
   title: "ONAI OCR - Procesamiento Inteligente de Documentos",
   description: "Plataforma moderna para clasificar, procesar y consultar documentos con IA",
   generator: "v0.app",
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '16x16', type: 'image/x-icon' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    shortcut: '/favicon.ico',
+  },
 }
 
 export default function RootLayout({
