@@ -17,6 +17,12 @@ const MAX_ROWS = 1000;
 /** Query timeout in milliseconds */
 const QUERY_TIMEOUT_MS = 5000;
 
+/** Schema context cache TTL in ms (5 minutes) */
+const SCHEMA_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** Skip LLM formatting for result sets at or below this size */
+const FORMAT_SKIP_ROWS = 10;
+
 /** Forbidden SQL patterns (mutations, DDL, etc.) */
 const FORBIDDEN_PATTERNS = [
   /\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|EXECUTE|COPY)\b/i,
@@ -31,11 +37,19 @@ export interface SqlRagResult {
   data?: Record<string, any>[];
 }
 
+interface SchemaCacheEntry {
+  context: string;
+  expiresAt: number;
+}
+
 @Injectable()
 export class SqlRagService {
   private readonly logger = new Logger(SqlRagService.name);
   private genAI: GoogleGenerativeAI;
   private model: any;
+
+  /** In-process schema context cache keyed by userId */
+  private readonly schemaCache = new Map<number, SchemaCacheEntry>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -65,8 +79,8 @@ export class SqlRagService {
     this.logger.log(`SQL RAG query from user ${userId}: "${question}"`);
 
     try {
-      // 1. Build schema context for this user
-      const schemaContext = await this.buildSchemaContext(userId);
+      // 1. Build (or retrieve cached) schema context for this user
+      const schemaContext = await this.getSchemaContext(userId);
 
       // 2. Generate SQL via Gemini (uses $1 placeholder for user_id)
       const generatedSql = await this.generateSql(
@@ -93,7 +107,7 @@ export class SqlRagService {
       // 5. Execute query with timeout
       const rows = await this.executeSql(safeSql, params);
 
-      // 6. Format response with Gemini
+      // 6. Format response — skip LLM for small result sets
       const answer = await this.formatResponse(question, generatedSql, rows);
 
       return {
@@ -116,6 +130,34 @@ export class SqlRagService {
           'No pude procesar tu consulta. Intenta reformularla de forma más específica.',
       };
     }
+  }
+
+  /**
+   * Invalidate the schema cache for a user (call after document type changes).
+   */
+  invalidateSchemaCache(userId: number): void {
+    this.schemaCache.delete(userId);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Private helpers
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Return cached schema context for a user, refreshing if stale.
+   * Avoids 2 DB queries on every chat message (major latency reduction).
+   */
+  private async getSchemaContext(userId: number): Promise<string> {
+    const cached = this.schemaCache.get(userId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.context;
+    }
+    const context = await this.buildSchemaContext(userId);
+    this.schemaCache.set(userId, {
+      context,
+      expiresAt: Date.now() + SCHEMA_CACHE_TTL_MS,
+    });
+    return context;
   }
 
   /**
@@ -201,52 +243,42 @@ IMPORTANTE: user_id siempre se pasa como parámetro $1. Usa $1 en WHERE, nunca e
 
   /**
    * Use Gemini to translate natural language to SQL.
+   * Prompt is kept minimal to reduce token count and latency.
    */
   private async generateSql(
     question: string,
     schemaContext: string,
     userId: number,
   ): Promise<string> {
-    const prompt = `Eres un experto en SQL para PostgreSQL. Traduce la pregunta del usuario a una query SQL.
+    const prompt = `Eres un experto SQL PostgreSQL. Traduce la pregunta a una query SQL.
 
 ${schemaContext}
 
-REGLAS ESTRICTAS:
-1. SIEMPRE usar WHERE user_id = $1 (parámetro seguro, nunca el valor directo)
-2. SOLO queries SELECT — NUNCA INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE
-3. LIMIT máximo ${MAX_ROWS} filas
-4. Para acceder a campos JSONB extraídos, usa jsonb_array_elements como se muestra arriba
-5. JOIN con document_types cuando necesites el nombre del tipo de documento
-6. Usa aliases descriptivos en español
-7. Si la pregunta no es sobre documentos o datos extraídos, responde exactamente: NO_SQL
-8. Una sola query, sin punto y coma intermedio
-9. Siempre incluir ORDER BY cuando tenga sentido (fecha, cantidad, etc.)
+REGLAS:
+1. WHERE user_id = $1 SIEMPRE (nunca el valor directo)
+2. Solo SELECT. Sin INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/TRUNCATE.
+3. LIMIT máximo ${MAX_ROWS}
+4. Para campos JSONB usa jsonb_array_elements como se indica arriba
+5. JOIN document_types si necesitas el nombre del tipo
+6. Si la pregunta no es sobre documentos/datos, responde: NO_SQL
+7. Una sola query, sin punto y coma
 
-EJEMPLOS:
-- "¿Cuántos documentos tengo?" → SELECT COUNT(*) AS total_documentos FROM documents WHERE user_id = $1
-- "¿Cuántos documentos por tipo?" → SELECT dt.name AS tipo, COUNT(*) AS cantidad FROM documents d JOIN document_types dt ON d.document_type_id = dt.id WHERE d.user_id = $1 GROUP BY dt.name ORDER BY cantidad DESC
-- "¿Cuánto facturé en 2025?" → SELECT SUM((f->>'value')::numeric) AS total_facturado FROM documents d JOIN document_types dt ON d.document_type_id = dt.id, jsonb_array_elements(d.extracted_data->'fields') f WHERE d.user_id = $1 AND LOWER(dt.name) LIKE '%factura%' AND f->>'name' = 'monto' AND d.created_at >= '2025-01-01' AND d.created_at < '2026-01-01'
-- "Muéstrame los contratos del último mes" → SELECT d.filename, d.extracted_data->>'summary' AS resumen, d.created_at FROM documents d JOIN document_types dt ON d.document_type_id = dt.id WHERE d.user_id = $1 AND LOWER(dt.name) LIKE '%contrato%' AND d.created_at >= NOW() - INTERVAL '1 month' ORDER BY d.created_at DESC
+Pregunta: "${question}"
 
-Pregunta del usuario: "${question}"
-
-Responde SOLO con la query SQL, sin backticks, sin explicaciones, sin markdown. Si no puedes traducirla, responde: NO_SQL`;
+Solo la query SQL, sin backticks ni explicaciones. Si no puedes, responde: NO_SQL`;
 
     const result = await this.model.generateContent(prompt);
     const response = result.response.text().trim();
 
     if (response === 'NO_SQL' || response.startsWith('NO_SQL')) {
-      // Not a data query — answer as a general assistant instead
       return null;
     }
 
-    // Clean up: remove markdown fences if present
     let sql = response
       .replace(/^```(?:sql)?\s*\n?/gm, '')
       .replace(/\n?```\s*$/gm, '')
       .trim();
 
-    // Remove trailing semicolons (we add them in execution)
     sql = sql.replace(/;\s*$/, '');
 
     return sql;
@@ -256,7 +288,6 @@ Responde SOLO con la query SQL, sin backticks, sin explicaciones, sin markdown. 
    * Validate generated SQL for safety.
    */
   private validateSql(sql: string): void {
-    // Check for forbidden patterns
     for (const pattern of FORBIDDEN_PATTERNS) {
       if (pattern.test(sql)) {
         throw new ForbiddenException(
@@ -265,12 +296,10 @@ Responde SOLO con la query SQL, sin backticks, sin explicaciones, sin markdown. 
       }
     }
 
-    // Must start with SELECT
     if (!/^\s*SELECT\b/i.test(sql)) {
       throw new ForbiddenException('Solo se permiten queries SELECT.');
     }
 
-    // Must reference $1 for user_id parameterization
     if (!sql.includes('$1')) {
       throw new ForbiddenException(
         'La query no incluye el parámetro de usuario $1. Rechazada por seguridad.',
@@ -280,7 +309,6 @@ Responde SOLO con la query SQL, sin backticks, sin explicaciones, sin markdown. 
 
   /**
    * Prepare the query for safe execution:
-   * - Ensure user_id = $1 is present
    * - Add LIMIT if missing
    * - Return params array
    */
@@ -290,7 +318,6 @@ Responde SOLO con la query SQL, sin backticks, sin explicaciones, sin markdown. 
   ): { safeSql: string; params: any[] } {
     let safeSql = sql;
 
-    // Auto-add LIMIT if missing
     if (!/\bLIMIT\b/i.test(safeSql)) {
       safeSql = safeSql + ` LIMIT ${MAX_ROWS}`;
     }
@@ -312,7 +339,6 @@ Responde SOLO con la query SQL, sin backticks, sin explicaciones, sin markdown. 
     await queryRunner.connect();
 
     try {
-      // Begin a read-only transaction with timeout
       await queryRunner.query('BEGIN READ ONLY');
       await queryRunner.query(`SET LOCAL statement_timeout = ${QUERY_TIMEOUT_MS}`);
 
@@ -334,36 +360,31 @@ Responde SOLO con la query SQL, sin backticks, sin explicaciones, sin markdown. 
   }
 
   /**
-   * Use Gemini to format the raw query results into a human-readable response.
-   */
-  /**
    * Answer general (non-data) questions about the system.
    */
   private async answerGeneral(question: string, schemaContext: string): Promise<string> {
-    const prompt = `Eres un asistente de IA para ONAI OCR, una plataforma de procesamiento inteligente de documentos.
-
-Información del sistema:
-- Los usuarios pueden subir documentos PDF
-- La IA extrae texto con OCR (Mistral), clasifica el tipo de documento y extrae campos clave (Gemini)
-- Los datos extraídos se guardan y se pueden consultar
-- Puedes responder preguntas sobre los datos extraídos de los documentos del usuario
+    const prompt = `Eres un asistente de IA para ONAI OCR, plataforma de procesamiento de documentos.
 
 ${schemaContext}
 
 El usuario pregunta: "${question}"
 
-Responde de forma amigable y concisa en español. Si preguntan qué puedes hacer, explica que puedes:
-1. Responder preguntas sobre sus documentos procesados (cuántos hay, de qué tipo, datos específicos)
-2. Buscar información en los campos extraídos (montos, fechas, nombres, etc.)
-3. Hacer cálculos sobre los datos (sumas, promedios, conteos por tipo)
-4. Mostrar estadísticas y resúmenes
-
-Si no sabes algo, di que no tienes esa información.`;
+Responde amigable y conciso en español. Si preguntan qué puedes hacer, explica que puedes:
+1. Responder sobre sus documentos (cuántos hay, tipos, datos específicos)
+2. Buscar info en campos extraídos (montos, fechas, nombres, etc.)
+3. Calcular sobre los datos (sumas, promedios, conteos)
+4. Mostrar estadísticas y resúmenes`;
 
     const result = await this.model.generateContent(prompt);
     return result.response.text().trim();
   }
 
+  /**
+   * Format query results as a human-readable response.
+   *
+   * Optimisation: for small result sets (≤ FORMAT_SKIP_ROWS rows) we format
+   * locally without an extra LLM call, saving ~1-2s per query.
+   */
   private async formatResponse(
     originalQuestion: string,
     sql: string,
@@ -373,21 +394,27 @@ Si no sabes algo, di que no tienes esa información.`;
       return 'No encontré resultados para tu consulta. Puede que no tengas documentos que coincidan o que necesites reformular la pregunta.';
     }
 
-    // For simple single-value results, return directly without LLM call
+    // ── Fast path: format locally without LLM ──────────────────────────────
     if (rows.length === 1 && Object.keys(rows[0]).length === 1) {
       const key = Object.keys(rows[0])[0];
       const value = Object.values(rows[0])[0];
       if (value === null || value === undefined) {
         return 'No hay datos disponibles para esa consulta.';
       }
-      // Simple formatting for common cases
+      const label = key.replace(/_/g, ' ');
       if (typeof value === 'number' || !isNaN(Number(value))) {
-        return `${key.replace(/_/g, ' ')}: ${value}`;
+        const num = Number(value);
+        return `${label}: ${num.toLocaleString('es-CL')}`;
       }
-      return `${value}`;
+      return `${label}: ${value}`;
     }
 
-    // Truncate large result sets for the LLM context
+    // For small result sets, build a readable table without calling LLM
+    if (rows.length <= FORMAT_SKIP_ROWS) {
+      return this.formatRowsLocally(rows);
+    }
+
+    // ── Slow path: LLM formatting for larger result sets ───────────────────
     const dataPreview = rows.length > 25 ? rows.slice(0, 25) : rows;
     const truncated = rows.length > 25;
 
@@ -407,5 +434,43 @@ Formatea una respuesta clara y concisa EN ESPAÑOL:
 
     const result = await this.model.generateContent(prompt);
     return result.response.text().trim();
+  }
+
+  /**
+   * Format a small result set as a readable text table without an LLM call.
+   */
+  private formatRowsLocally(rows: Record<string, any>[]): string {
+    if (rows.length === 0) return 'Sin resultados.';
+
+    const keys = Object.keys(rows[0]);
+
+    // Single column — just list values
+    if (keys.length === 1) {
+      const key = keys[0].replace(/_/g, ' ');
+      const values = rows.map((r) => {
+        const v = Object.values(r)[0];
+        if (v === null || v === undefined) return '—';
+        const num = Number(v);
+        return !isNaN(num) ? num.toLocaleString('es-CL') : String(v);
+      });
+      return `${key}:\n${values.map((v) => `• ${v}`).join('\n')}`;
+    }
+
+    // Multiple columns — key: value per row
+    return rows
+      .map((row, i) => {
+        const parts = keys.map((k) => {
+          const v = row[k];
+          const display =
+            v === null || v === undefined
+              ? '—'
+              : !isNaN(Number(v)) && String(v).trim() !== ''
+                ? Number(v).toLocaleString('es-CL')
+                : String(v);
+          return `  ${k.replace(/_/g, ' ')}: ${display}`;
+        });
+        return `${i + 1}. ${parts.join('\n')}`;
+      })
+      .join('\n\n');
   }
 }
