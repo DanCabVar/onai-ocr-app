@@ -401,12 +401,27 @@ Responde amigable y conciso en español. Si preguntan qué puedes hacer, explica
       if (value === null || value === undefined) {
         return 'No hay datos disponibles para esa consulta.';
       }
-      const label = key.replace(/_/g, ' ');
-      if (typeof value === 'number' || !isNaN(Number(value))) {
-        const num = Number(value);
-        return `${label}: ${num.toLocaleString('es-CL')}`;
+      // Build a natural language response without exposing raw SQL aliases
+      const num = Number(value);
+      const formattedValue =
+        !isNaN(num) && Math.abs(num) < 1e12
+          ? num.toLocaleString('es-CL')
+          : String(value);
+
+      try {
+        const simplePrompt = `El usuario preguntó: "${originalQuestion}"
+El resultado es: ${formattedValue}
+
+Responde directamente en español natural y amigable, en 1 oración. 
+NO uses términos técnicos como "count", "total_documentos" ni nombres de columnas.
+Ejemplo correcto: "Tienes 6 documentos procesados." 
+Ejemplo incorrecto: "count: 6"`;
+        const simpleResult = await this.model.generateContent(simplePrompt);
+        return simpleResult.response.text().trim();
+      } catch {
+        // Fallback: human-readable without SQL alias
+        return `Resultado: ${formattedValue}`;
       }
-      return `${label}: ${value}`;
     }
 
     // For small result sets, build a readable table without calling LLM

@@ -167,9 +167,11 @@ export class DocumentsService {
           status: doc.status,
           createdAt: doc.createdAt,
           updatedAt: doc.updatedAt,
-          // Legacy fields (deprecated)
-          googleDriveLink: doc.googleDriveLink,
-          googleDriveFileId: doc.googleDriveFileId,
+          // Legacy fields: only expose for Google Drive documents
+          ...(doc.storageProvider !== 'r2' && {
+            googleDriveLink: doc.googleDriveLink,
+            googleDriveFileId: doc.googleDriveFileId,
+          }),
         };
       }),
     );
@@ -273,9 +275,11 @@ export class DocumentsService {
       status: document.status,
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
-      // Legacy fields (deprecated)
-      googleDriveLink: document.googleDriveLink,
-      googleDriveFileId: document.googleDriveFileId,
+      // Legacy fields: only expose for Google Drive documents
+      ...(document.storageProvider !== 'r2' && {
+        googleDriveLink: document.googleDriveLink,
+        googleDriveFileId: document.googleDriveFileId,
+      }),
     };
   }
 
