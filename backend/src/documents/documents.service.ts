@@ -12,6 +12,35 @@ import { User } from '../database/entities/user.entity';
 import { DocumentProcessingService } from './services/document-processing.service';
 import { StorageService } from '../storage/storage.service';
 
+/**
+ * Normalises a value that may be stored as a Python dict string (single-quoted keys/values,
+ * Python True/False/None) into a proper JS object.
+ * Returns the original value unchanged if it is already an object/array or cannot be parsed.
+ */
+function normalisePythonDictString(value: any): any {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== 'string') return value; // already an object — nothing to do
+
+  try {
+    // Fast path: valid JSON
+    return JSON.parse(value);
+  } catch {
+    // Slow path: attempt Python → JSON conversion
+    try {
+      const json = value
+        .replace(/'/g, '"')          // single quotes → double quotes
+        .replace(/\bTrue\b/g, 'true')
+        .replace(/\bFalse\b/g, 'false')
+        .replace(/\bNone\b/g, 'null')
+        .replace(/,(\s*[}\]])/g, '$1'); // trailing commas
+      return JSON.parse(json);
+    } catch {
+      // Cannot parse — return a safe fallback object so the UI never crashes
+      return { summary: value, fields: [] };
+    }
+  }
+}
+
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
@@ -161,8 +190,8 @@ export class DocumentsService {
           documentTypeName: doc.documentType?.name || null,
           fileUrl,
           storageProvider: doc.storageProvider || 'google_drive',
-          extractedData: doc.extractedData,
-          inferredData: doc.inferredData,
+          extractedData: normalisePythonDictString(doc.extractedData),
+          inferredData: normalisePythonDictString(doc.inferredData),
           confidenceScore: doc.confidenceScore,
           status: doc.status,
           createdAt: doc.createdAt,
@@ -266,8 +295,8 @@ export class DocumentsService {
       fileUrl,
       storageProvider: document.storageProvider || 'google_drive',
       storageKey: document.storageKey,
-      extractedData: document.extractedData,
-      inferredData: document.inferredData,
+      extractedData: normalisePythonDictString(document.extractedData),
+      inferredData: normalisePythonDictString(document.inferredData),
       ocrRawText: document.ocrRawText,
       confidenceScore: document.confidenceScore,
       status: document.status,
