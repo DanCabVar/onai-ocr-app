@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, HttpCode } from '@nestjs/common';
 import { ChatService, ChatQueryResult } from './chat.service';
 import { QueryDto } from './dto/query.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -11,6 +11,7 @@ export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
   @Post('query')
+  @HttpCode(200)
   async query(
     @Body() queryDto: QueryDto,
     @CurrentUser() user: User,

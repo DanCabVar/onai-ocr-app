@@ -11,6 +11,7 @@ import {
   PLAN_LIMITS,
   PLAN_PRICES,
 } from '../database/entities/subscription.entity';
+import { Document } from '../database/entities/document.entity';
 import { StripeService } from '../stripe/stripe.service';
 
 @Injectable()
@@ -20,6 +21,8 @@ export class SubscriptionsService {
   constructor(
     @InjectRepository(Subscription)
     private readonly subscriptionRepository: Repository<Subscription>,
+    @InjectRepository(Document)
+    private readonly documentRepository: Repository<Document>,
     private readonly stripeService: StripeService,
   ) {}
 
@@ -113,6 +116,43 @@ export class SubscriptionsService {
   }
 
   /**
+   * Recalculate docsUsedThisPeriod by counting real documents in the DB
+   * for the current billing period and syncing the cached counter.
+   */
+  async recalculateDocsUsed(userId: number): Promise<number> {
+    const sub = await this.getOrCreate(userId);
+
+    const qb = this.documentRepository
+      .createQueryBuilder('doc')
+      .where('doc.userId = :userId', { userId });
+
+    if (sub.periodStart) {
+      qb.andWhere('doc.createdAt >= :periodStart', {
+        periodStart: sub.periodStart,
+      });
+    }
+    if (sub.periodEnd) {
+      qb.andWhere('doc.createdAt < :periodEnd', {
+        periodEnd: sub.periodEnd,
+      });
+    }
+
+    const realCount = await qb.getCount();
+
+    if (realCount !== sub.docsUsedThisPeriod) {
+      this.logger.warn(
+        `docsUsedThisPeriod mismatch for user ${userId}: cached=${sub.docsUsedThisPeriod}, real=${realCount}. Fixing.`,
+      );
+      await this.subscriptionRepository.update(
+        { userId },
+        { docsUsedThisPeriod: realCount },
+      );
+    }
+
+    return realCount;
+  }
+
+  /**
    * Update a user's plan (direct, without Stripe).
    */
   async updatePlan(
@@ -171,6 +211,7 @@ export class SubscriptionsService {
 
   /**
    * Get subscription status for display.
+   * Returns the real document count from the DB to avoid stale cached values.
    */
   async getStatus(userId: number): Promise<{
     plan: SubscriptionPlan;
@@ -185,9 +226,12 @@ export class SubscriptionsService {
     const sub = await this.getOrCreate(userId);
     const limits = PLAN_LIMITS[sub.plan];
 
+    // Always return the real count from DB (recalculates and syncs if needed)
+    const docsUsed = await this.recalculateDocsUsed(userId);
+
     return {
       plan: sub.plan,
-      docsUsed: sub.docsUsedThisPeriod,
+      docsUsed,
       docsLimit: limits.docsPerMonth,
       docTypesLimit: limits.docTypesMax,
       maxFileSizeMb: limits.maxFileSizeMb,
