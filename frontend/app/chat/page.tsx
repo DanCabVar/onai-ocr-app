@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { chatService } from "@/lib/api/chat.service"
-import { AppSidebar } from "@/components/app-sidebar"
+// AppSidebar is already rendered by ConditionalNavigation in the root layout
 
 interface Message {
   id: string
@@ -109,9 +109,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen bg-background">
-      <AppSidebar />
-      <div className="flex-1 flex flex-col min-w-0">
+    <div className="flex-1 flex flex-col min-w-0 h-full">
         {/* Header */}
         <div className="border-b border-border px-6 py-4 flex items-center justify-between bg-background">
           <div className="flex items-center gap-3">
@@ -314,6 +312,5 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
-    </div>
   )
 }
