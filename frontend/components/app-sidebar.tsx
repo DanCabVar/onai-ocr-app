@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, FileText, HardDrive, Layers, Settings,
-  ScanEye, ChevronDown, LogOut, User, HelpCircle
+  ScanEye, ChevronDown, LogOut, User, HelpCircle, MessageCircle
 } from "lucide-react";
 import { authService } from "@/lib/api/auth.service";
 import Link from "next/link";
@@ -13,6 +13,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 const mainNavItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Documentos", href: "/documents", icon: FileText },
+  { label: "Chat IA", href: "/chat", icon: MessageCircle },
   { label: "Almacenamiento", href: "/storage", icon: HardDrive },
 ];
 
