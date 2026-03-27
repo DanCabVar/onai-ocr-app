@@ -31,10 +31,10 @@ export class ChatService {
       user.id,
     );
 
+    // Return only the answer — do NOT expose the raw SQL query or raw data rows
+    // to avoid leaking internal DB schema to clients.
     return {
       answer: result.answer,
-      query: result.query,
-      data: result.data,
     };
   }
 }
