@@ -158,17 +158,18 @@ export default function DashboardPage() {
       time: formatRelativeTime(doc.createdAt),
     }))
 
-  // Chart data: documents processed per day (last 14 days)
+  // Chart data: documents processed per day (last 14 days, using local timezone)
   const chartData = useMemo(() => {
     const now = new Date()
     const days: { date: string; label: string; completados: number; errores: number; total: number }[] = []
     for (let i = 13; i >= 0; i--) {
       const d = new Date(now)
       d.setDate(d.getDate() - i)
-      const key = d.toISOString().slice(0, 10)
+      // Use local date key to avoid UTC vs local timezone mismatch
+      const key = toLocalDateKey(d)
       const label = d.toLocaleDateString("es-ES", { day: "2-digit", month: "short" })
       const dayDocs = documents.filter(
-        (doc) => new Date(doc.createdAt).toISOString().slice(0, 10) === key
+        (doc) => toLocalDateKey(new Date(doc.createdAt)) === key
       )
       days.push({
         date: key,
@@ -461,10 +462,17 @@ export default function DashboardPage() {
         {/* Chart: Documentos procesados por día */}
         <Card className="rounded-2xl">
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-primary flex items-center gap-2">
-              <BarChart3 className="h-5 w-5 text-primary" />
-              Documentos Procesados (últimos 14 días)
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg font-primary flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-primary" />
+                Documentos Procesados (últimos 14 días)
+              </CardTitle>
+              {!isLoading && (
+                <span className="text-sm text-muted-foreground font-secondary">
+                  {chartData.reduce((sum, d) => sum + d.total, 0)} en período
+                </span>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -495,6 +503,7 @@ export default function DashboardPage() {
                     />
                     <YAxis
                       allowDecimals={false}
+                      domain={[0, "auto"]}
                       tick={{ fontSize: 11 }}
                       className="fill-muted-foreground"
                       tickLine={false}
@@ -878,6 +887,14 @@ export default function DashboardPage() {
       </div>
     </div>
   )
+}
+
+// Helper: get local date string YYYY-MM-DD (avoids UTC vs local timezone mismatch)
+function toLocalDateKey(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  return `${y}-${m}-${d}`
 }
 
 // Helper: relative time formatting
