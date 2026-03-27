@@ -159,17 +159,30 @@ export default function DashboardPage() {
     }))
 
   // Chart data: documents processed per day (last 14 days)
+  // Use LOCAL date keys throughout to avoid UTC-shift mismatches when the
+  // backend returns timestamps without explicit timezone info.
   const chartData = useMemo(() => {
     const now = new Date()
     const days: { date: string; label: string; completados: number; errores: number; total: number }[] = []
+
+    // Helper: "YYYY-MM-DD" in local time
+    const localDateKey = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+
+    // Pre-build local-date keys for all documents once
+    const docDateKeys = documents.map((doc) => {
+      // Normalise: some backends omit the "Z" on UTC timestamps
+      const raw = doc.createdAt
+      const normalised = raw && !raw.endsWith("Z") && !raw.includes("+") ? raw + "Z" : raw
+      return localDateKey(new Date(normalised))
+    })
+
     for (let i = 13; i >= 0; i--) {
       const d = new Date(now)
       d.setDate(d.getDate() - i)
-      const key = d.toISOString().slice(0, 10)
+      const key = localDateKey(d)
       const label = d.toLocaleDateString("es-ES", { day: "2-digit", month: "short" })
-      const dayDocs = documents.filter(
-        (doc) => new Date(doc.createdAt).toISOString().slice(0, 10) === key
-      )
+      const dayDocs = documents.filter((_, idx) => docDateKeys[idx] === key)
       days.push({
         date: key,
         label,
@@ -185,9 +198,11 @@ export default function DashboardPage() {
   const thisMonth = new Date()
   thisMonth.setDate(1)
   thisMonth.setHours(0, 0, 0, 0)
-  const newTypesThisMonth = documentTypes.filter(
-    (dt) => new Date(dt.createdAt) >= thisMonth
-  ).length
+  const newTypesThisMonth = documentTypes.filter((dt) => {
+    const raw = dt.createdAt
+    const normalised = raw && !raw.endsWith("Z") && !raw.includes("+") ? raw + "Z" : raw
+    return new Date(normalised) >= thisMonth
+  }).length
 
   // Status badge helper
   function getStatusBadge(status: string) {
