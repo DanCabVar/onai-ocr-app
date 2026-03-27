@@ -107,7 +107,7 @@ export default function LoginPage() {
             </div>
             <CardTitle className="text-2xl font-primary font-bold">Iniciar Sesión</CardTitle>
             <CardDescription className="font-secondary">
-              Ingrese tus credenciales para continuar
+              Ingresa tus credenciales para continuar
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
