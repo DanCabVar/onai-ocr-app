@@ -481,8 +481,8 @@ export default function DocumentsPage() {
                 </div>
 
                 {/* Desktop table view */}
-                <div className="hidden sm:block">
-                  <Table>
+                <div className="hidden sm:block overflow-x-auto">
+                  <Table className="min-w-full">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Archivo</TableHead>
@@ -490,7 +490,7 @@ export default function DocumentsPage() {
                         <TableHead>Estado</TableHead>
                         <TableHead>Confianza</TableHead>
                         <TableHead>Fecha</TableHead>
-                        <TableHead className="text-right">Acciones</TableHead>
+                        <TableHead className="text-right w-px whitespace-nowrap">Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -539,7 +539,7 @@ export default function DocumentsPage() {
                               year: "numeric",
                             })}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right w-px whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1">
                               <Button
                                 variant="ghost"
