@@ -5,6 +5,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -125,8 +126,14 @@ export class DocumentsController {
   }
 
   @Get()
-  async getDocuments(@CurrentUser() user: User) {
-    return this.documentsService.getDocuments(user);
+  async getDocuments(
+    @CurrentUser() user: User,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : undefined;
+    const limitNum = limit ? Math.min(200, Math.max(1, parseInt(limit, 10) || 50)) : undefined;
+    return this.documentsService.getDocuments(user, pageNum, limitNum);
   }
 
   @Get('files')

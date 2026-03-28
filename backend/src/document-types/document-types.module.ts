@@ -10,6 +10,7 @@ import { AuthModule } from '../auth/auth.module';
 import { StorageModule } from '../storage/storage.module';
 import { AIServicesModule } from '../ai-services/ai-services.module';
 import { DocumentsModule } from '../documents/documents.module';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { DocumentsModule } from '../documents/documents.module';
     StorageModule,
     AIServicesModule,
     DocumentsModule,
+    SubscriptionsModule,
   ],
   controllers: [DocumentTypesController],
   providers: [

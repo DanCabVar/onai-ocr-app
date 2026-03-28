@@ -134,11 +134,16 @@ export class DocumentsService {
     })();
   }
 
-  async getDocuments(user: User) {
-    const documents = await this.documentRepository.find({
+  async getDocuments(user: User, page?: number, limit?: number) {
+    const take = limit ?? undefined;
+    const skip = take && page ? (page - 1) * take : undefined;
+
+    const [documents, total] = await this.documentRepository.findAndCount({
       where: { userId: user.id },
       order: { createdAt: 'DESC' },
       relations: ['documentType'],
+      ...(take !== undefined ? { take } : {}),
+      ...(skip !== undefined ? { skip } : {}),
     });
 
     // Generate fresh presigned URLs for R2-stored docs
@@ -173,6 +178,17 @@ export class DocumentsService {
         };
       }),
     );
+
+    // If pagination params were provided, return paginated envelope; otherwise return plain array for backward compat
+    if (take !== undefined) {
+      return {
+        items: results,
+        total,
+        page: page ?? 1,
+        limit: take,
+        totalPages: Math.ceil(total / take),
+      };
+    }
 
     return results;
   }

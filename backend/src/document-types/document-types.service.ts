@@ -12,6 +12,7 @@ import { User } from '../database/entities/user.entity';
 import { CreateDocumentTypeDto } from './dto/create-document-type.dto';
 import { UpdateDocumentTypeDto } from './dto/update-document-type.dto';
 import { DocumentProcessingService } from '../documents/services/document-processing.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 // NOTE: GoogleDriveService replaced by R2 storage. Folder creation no longer needed.
 // import { GoogleDriveService } from '../google-drive/services/google-drive.service';
 
@@ -23,9 +24,16 @@ export class DocumentTypesService {
     @InjectRepository(DocumentType)
     private readonly documentTypeRepository: Repository<DocumentType>,
     private readonly documentProcessingService: DocumentProcessingService,
+    private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
   async create(createDto: CreateDocumentTypeDto, user: User) {
+    // Verificar límite de tipos según suscripción
+    const currentCount = await this.documentTypeRepository.count({
+      where: { userId: user.id },
+    });
+    await this.subscriptionsService.checkDocTypeLimit(user.id, currentCount);
+
     // Verificar si ya existe un tipo con ese nombre para este usuario
     const existing = await this.documentTypeRepository.findOne({
       where: { name: createDto.name, userId: user.id },
