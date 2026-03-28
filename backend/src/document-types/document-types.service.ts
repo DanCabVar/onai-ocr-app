@@ -70,7 +70,7 @@ export class DocumentTypesService {
     };
   }
 
-  async findAll(user: User) {
+  async findAll(user: User, page: number = 1, limit: number = 20) {
     const documentTypes = await this.documentTypeRepository.find({
       where: { userId: user.id },
       order: { createdAt: 'DESC' },
