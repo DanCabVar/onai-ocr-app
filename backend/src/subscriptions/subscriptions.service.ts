@@ -97,9 +97,10 @@ export class SubscriptionsService {
     if (limits.docTypesMax === -1) return;
 
     if (currentCount >= limits.docTypesMax) {
+      const nextPlan = sub.plan === 'free' ? 'Starter' : 'Pro';
       throw new ForbiddenException(
-        `Límite de tipos de documento alcanzado (${limits.docTypesMax} en plan ${sub.plan}). ` +
-          'Actualiza tu plan para crear más tipos.',
+        `Has alcanzado el límite de ${limits.docTypesMax} tipo(s) de documento para tu plan. ` +
+          `Actualiza a ${nextPlan} para crear más.`,
       );
     }
   }

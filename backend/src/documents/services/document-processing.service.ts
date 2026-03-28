@@ -281,6 +281,10 @@ export class DocumentProcessingService {
         }
       }
 
+      // ─── Ensure extractedData is a valid JSON-serializable object ───
+      // Guard against Python-style strings that may come from AI responses
+      extractedData = this.ensureValidJsonData(extractedData);
+
       // ─── PASO 6: Save extracted JSON to R2 ───
       const saveJsonMetric = this.metrics.startStage(ctx, 'save-json-r2');
       const extractedKey = this.storageService.buildKey(
@@ -709,7 +713,9 @@ export class DocumentProcessingService {
         return n.includes(cn) || cn.includes(n);
       });
 
-      const extractedData = item.classification.extraction || { summary: 'Sin resumen', fields: [] };
+      const extractedData = this.ensureValidJsonData(
+        item.classification.extraction || { summary: 'Sin resumen', fields: [] },
+      );
 
       // Save extracted JSON to R2
       const extractedKey = this.storageService.buildKey(
@@ -1025,7 +1031,7 @@ If no merges needed, return {"merges":[]}. JSON only.`;
 
     // Update document
     document.documentTypeId = documentType.id;
-    document.extractedData = extractedData;
+    document.extractedData = this.ensureValidJsonData(extractedData);
     document.status = 'completed';
     await this.documentRepository.save(document);
 
@@ -1046,6 +1052,35 @@ If no merges needed, return {"merges":[]}. JSON only.`;
         name: documentType.name,
       },
     };
+  }
+
+  /**
+   * Ensure a value is a valid JSON-serializable object.
+   * If it's a Python-style string (single quotes), attempt to fix it.
+   * Falls back to null rather than saving broken data.
+   */
+  private ensureValidJsonData(data: any): any {
+    if (data === null || data === undefined) return null;
+    if (typeof data !== 'string') {
+      // Already an object/array — serialize+parse to strip any non-serializable values
+      try {
+        return JSON.parse(JSON.stringify(data));
+      } catch {
+        return null;
+      }
+    }
+    // String: try JSON parse first
+    try {
+      return JSON.parse(data);
+    } catch {
+      // Try fixing Python single-quote style
+      try {
+        return JSON.parse(data.replace(/'/g, '"'));
+      } catch {
+        this.logger.warn(`extractedData is not valid JSON and could not be fixed — storing null`);
+        return null;
+      }
+    }
   }
 
   /**
