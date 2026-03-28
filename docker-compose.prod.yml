@@ -90,6 +90,8 @@ services:
       - MISTRAL_API_KEY=${MISTRAL_API_KEY}
       - MISTRAL_OCR_MODEL=${MISTRAL_OCR_MODEL:-mistral-ocr-latest}
       - MISTRAL_VISION_MODEL=${MISTRAL_VISION_MODEL:-pixtral-12b-latest}
+      # Email — Resend (optional: si no se configura, los códigos van a consola)
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
       # Processor
       - PROCESSOR_URL=http://processor:8000
       # Optional
