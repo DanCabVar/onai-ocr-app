@@ -508,11 +508,12 @@ Formatea una respuesta clara y concisa EN ESPAÑOL:
     // If all keys were hidden, fall back to showing all
     const displayKeys = keys.length > 0 ? keys : allKeys;
 
-    // Single column — just list values
+    // Single column — just list values (omit column name header for cleaner output)
     if (displayKeys.length === 1) {
-      const key = displayKeys[0].replace(/_/g, ' ');
       const values = rows.map((r) => formatValue(displayKeys[0], r[displayKeys[0]]));
-      return `${key}:\n${values.map((v) => `• ${v}`).join('\n')}`;
+      // If only one value, return it directly without bullet
+      if (values.length === 1) return values[0];
+      return values.map((v) => `• ${v}`).join('\n');
     }
 
     // Multiple columns — key: value per row
