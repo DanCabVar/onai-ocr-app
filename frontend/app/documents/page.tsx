@@ -389,20 +389,20 @@ export default function DocumentsPage() {
                 {/* Mobile card view */}
                 <div className="block sm:hidden divide-y">
                   {paginatedDocs.map((doc) => (
-                    <div
-                      key={doc.id}
-                      className="p-4 space-y-2"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div
-                          className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer active:bg-muted/50 transition-colors"
-                          onClick={() => openDetail(doc)}
-                        >
+                    <div key={doc.id} className="p-4 space-y-3">
+                      {/* Top row: filename + status */}
+                      <div
+                        className="flex items-start justify-between gap-2 cursor-pointer active:opacity-70"
+                        onClick={() => openDetail(doc)}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
                           <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                           <span className="text-sm font-medium truncate">{doc.filename}</span>
                         </div>
                         {getStatusBadge(doc.status)}
                       </div>
+
+                      {/* Meta row */}
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>{doc.documentTypeName || "Sin tipo"}</span>
                         <span className="flex items-center gap-1">
@@ -414,11 +414,20 @@ export default function DocumentsPage() {
                           })}
                         </span>
                       </div>
+
+                      {/* Confidence bar */}
                       {doc.confidenceScore > 0 && (
                         <div className="flex items-center gap-2">
                           <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
                             <div
-                              className="h-full rounded-full bg-primary transition-all"
+                              className={cn(
+                                "h-full rounded-full transition-all",
+                                doc.confidenceScore >= 0.8
+                                  ? "bg-green-500"
+                                  : doc.confidenceScore >= 0.5
+                                    ? "bg-orange-500"
+                                    : "bg-red-500"
+                              )}
                               style={{ width: `${doc.confidenceScore * 100}%` }}
                             />
                           </div>
@@ -427,40 +436,42 @@ export default function DocumentsPage() {
                           </span>
                         </div>
                       )}
-                      {/* Mobile action buttons — always visible */}
-                      <div className="flex items-center gap-1 pt-1 border-t border-border/50">
+
+                      {/* Action buttons — always visible on mobile */}
+                      <div className="flex items-center gap-1 pt-1">
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
-                          className="h-8 flex-1 text-xs"
+                          className="flex-1 h-8 gap-1.5 text-xs"
                           onClick={() => openDetail(doc)}
                         >
-                          <Eye className="h-3.5 w-3.5 mr-1" />
+                          <Eye className="h-3.5 w-3.5" />
                           Ver
                         </Button>
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
-                          className="h-8 flex-1 text-xs"
-                          onClick={() => handleDownload(doc)}
+                          className="flex-1 h-8 gap-1.5 text-xs"
+                          onClick={(e) => { e.stopPropagation(); handleDownload(doc) }}
                         >
-                          <Download className="h-3.5 w-3.5 mr-1" />
+                          <Download className="h-3.5 w-3.5" />
                           Descargar
                         </Button>
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
-                          className="h-8 flex-1 text-xs"
-                          onClick={() => handleReprocess(doc)}
+                          className="h-8 w-8 p-0 flex-shrink-0"
+                          onClick={(e) => { e.stopPropagation(); handleReprocess(doc) }}
+                          title="Re-procesar"
                         >
-                          <RefreshCw className="h-3.5 w-3.5 mr-1" />
-                          Re-procesar
+                          <RefreshCw className="h-3.5 w-3.5" />
                         </Button>
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
-                          className="h-8 text-xs text-red-500 hover:text-red-600"
-                          onClick={() => handleDelete(doc)}
+                          className="h-8 w-8 p-0 flex-shrink-0 text-red-500 hover:text-red-600 hover:border-red-300"
+                          onClick={(e) => { e.stopPropagation(); handleDelete(doc) }}
+                          title="Eliminar"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -470,8 +481,8 @@ export default function DocumentsPage() {
                 </div>
 
                 {/* Desktop table view */}
-                <div className="hidden sm:block">
-                  <Table>
+                <div className="hidden sm:block overflow-x-auto">
+                  <Table className="min-w-full">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Archivo</TableHead>
@@ -479,7 +490,7 @@ export default function DocumentsPage() {
                         <TableHead>Estado</TableHead>
                         <TableHead>Confianza</TableHead>
                         <TableHead>Fecha</TableHead>
-                        <TableHead className="text-right">Acciones</TableHead>
+                        <TableHead className="text-right w-px whitespace-nowrap">Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -528,7 +539,7 @@ export default function DocumentsPage() {
                               year: "numeric",
                             })}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right w-px whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1">
                               <Button
                                 variant="ghost"
