@@ -137,6 +137,14 @@ export default function DocumentsPage() {
     return () => window.removeEventListener("documentUploaded", handler)
   }, [loadData])
 
+  // Auto-refresh polling when there are queued/processing docs
+  useEffect(() => {
+    const hasInProgress = documents.some(d => d.status === 'queued' || d.status === 'processing')
+    if (!hasInProgress) return
+    const interval = setInterval(() => loadData(), 5000)
+    return () => clearInterval(interval)
+  }, [documents, loadData])
+
   // Filtered documents
   const filteredDocs = useMemo(() => {
     return documents
@@ -265,7 +273,25 @@ export default function DocumentsPage() {
           </Card>
         )}
 
-        {/* Mini Stats */}
+        {/* Queue banner — visible when docs are being processed in background */}
+        {documents.some(d => d.status === 'queued' || d.status === 'processing') && (
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30">
+            <Loader2 className="h-4 w-4 text-blue-500 animate-spin flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                {documents.filter(d => d.status === 'queued').length > 0 && `${documents.filter(d => d.status === 'queued').length} en cola`}
+                {documents.filter(d => d.status === 'queued').length > 0 && documents.filter(d => d.status === 'processing').length > 0 && ' · '}
+                {documents.filter(d => d.status === 'processing').length > 0 && `${documents.filter(d => d.status === 'processing').length} procesando`}
+              </p>
+              <p className="text-xs text-blue-500 dark:text-blue-400">Actualizando automáticamente cada 5s...</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={loadData} className="text-blue-600 hover:text-blue-700 h-7 px-2">
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
+
+                {/* Mini Stats */
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <button
             onClick={() => setStatusFilter("all")}

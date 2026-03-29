@@ -60,6 +60,7 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
   const [confirmingAll, setConfirmingAll] = useState(false)
   const [availableTypes, setAvailableTypes] = useState<{ id: number; name: string }[]>([])
   const [completedResults, setCompletedResults] = useState<BatchDocumentResult[]>([])
+  const [backgroundMode, setBackgroundMode] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
@@ -137,8 +138,24 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
 
     setStep("uploading")
 
-    // Set all files to uploading state initially
+    // Set all files to uploading state
     setFileItems(prev => prev.map(item => ({ ...item, status: "uploading" as FileItemStatus })))
+
+    // Background / inbox mode
+    if (backgroundMode) {
+      try {
+        const files = fileItems.map(item => item.file)
+        const response = await documentsService.uploadToInbox(files, (percent) => setUploadPercent(percent))
+        setFileItems(prev => prev.map(item => ({ ...item, status: "completed" as FileItemStatus })))
+        setStep("results")
+        toast({ title: "En cola", description: `${files.length} archivo(s) subidos. Se procesarán en segundo plano.` })
+        window.dispatchEvent(new CustomEvent("documentUploaded", { detail: response }))
+      } catch (error: any) {
+        setFileItems(prev => prev.map(item => ({ ...item, status: "error" as FileItemStatus, error: error.message })))
+        setStep("results")
+      }
+      return
+    }
 
     try {
       const files = fileItems.map(item => item.file)
@@ -662,10 +679,21 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
                 Cancelar
               </Button>
               {fileItems.length > 0 && (
-                <Button onClick={handleUpload} className="gap-2">
-                  <Upload className="h-4 w-4" />
-                  Subir y Procesar ({fileItems.length} archivo{fileItems.length > 1 ? "s" : ""})
-                </Button>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={backgroundMode}
+                      onChange={e => setBackgroundMode(e.target.checked)}
+                      className="rounded"
+                    />
+                    Procesar en segundo plano
+                  </label>
+                  <Button onClick={handleUpload} className="gap-2">
+                    <Upload className="h-4 w-4" />
+                    {backgroundMode ? "Subir a cola" : `Subir y Procesar`} ({fileItems.length} archivo{fileItems.length > 1 ? "s" : ""})
+                  </Button>
+                </div>
               )}
             </>
           )}

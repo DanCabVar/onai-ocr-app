@@ -176,7 +176,7 @@ export class DocumentTypeInferenceService {
   private async step1_OCR(files: Express.Multer.File[]): Promise<OcrDoc[]> {
     this.logger.log(`\n📖 PASO 1: OCR en paralelo (${files.length} docs, max 3 concurrent)...`);
 
-    const results = await runWithSemaphore(files, 3, async (file, idx) => {
+    const results = await runWithSemaphore(files, 5, async (file, idx) => {
       const contentHash = this.ocrCache.computeHash(file.buffer);
 
       // Check cache first
@@ -242,7 +242,7 @@ export class DocumentTypeInferenceService {
     const validDocs = ocrDocs.filter((d) => !d.error && d.ocrText.length > 0);
     this.logger.log(`\n🏷️  PASO 2: Clasificar en paralelo (${validDocs.length} docs, max 5 concurrent)...`);
 
-    const results = await runWithSemaphore(validDocs, 5, async (doc, idx) => {
+    const results = await runWithSemaphore(validDocs, 10, async (doc, idx) => {
       this.logger.log(`   🔍 [${idx + 1}/${validDocs.length}] Clasificando "${doc.file.originalname}"...`);
 
       const inferred = await this.geminiClassifierService.inferFieldsForUnclassified(doc.ocrText);
@@ -477,7 +477,7 @@ JSON only, sin texto adicional.`;
       fieldSchema: { fields: normalizedFields },
     } as DocumentType;
 
-    const results = await runWithSemaphore(docs, 3, async (doc, idx) => {
+    const results = await runWithSemaphore(docs, 5, async (doc, idx) => {
       this.logger.log(`      📄 [${idx + 1}/${docs.length}] Re-extrayendo "${doc.file.originalname}"...`);
 
       const extractedData = await this.geminiClassifierService.extractDataWithVision(

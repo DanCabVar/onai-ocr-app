@@ -12,7 +12,6 @@ import { UsersController } from './users/users.controller';
 import { User } from './database/entities/user.entity';
 import { Document } from './database/entities/document.entity';
 import { DocumentType } from './database/entities/document-type.entity';
-import { GoogleToken } from './database/entities/google-token.entity';
 import { Subscription } from './database/entities/subscription.entity';
 
 // NOTE: GoogleDriveModule disabled — R2 storage is now the primary provider.
@@ -39,7 +38,7 @@ import { Subscription } from './database/entities/subscription.entity';
         username: configService.get<string>('DATABASE_USER'),
         password: configService.get<string>('DATABASE_PASSWORD'),
         database: configService.get<string>('DATABASE_NAME'),
-        entities: [User, Document, DocumentType, GoogleToken, Subscription],
+        entities: [User, Document, DocumentType, Subscription],
         synchronize: true, // ⚠️ Solo para desarrollo, desactivar en producción
         logging: false,
       }),

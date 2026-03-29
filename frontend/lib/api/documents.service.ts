@@ -153,6 +153,27 @@ export const documentsService = {
   },
 
   /**
+   * Sube archivos al inbox (originals/) sin procesar — modo background
+   */
+  async uploadToInbox(
+    files: File[],
+    onUploadProgress?: (percent: number) => void,
+  ): Promise<{ success: boolean; message: string; documentIds: number[]; processing: boolean }> {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+    const response = await apiClient.post('/documents/upload-to-inbox', formData, {
+      headers: { 'Content-Type': undefined as any },
+      timeout: 120000,
+      onUploadProgress: (progressEvent) => {
+        if (onUploadProgress && progressEvent.total) {
+          onUploadProgress(Math.round((progressEvent.loaded * 100) / progressEvent.total));
+        }
+      },
+    });
+    return response.data;
+  },
+
+  /**
    * Obtiene todos los documentos del usuario
    */
   async getAll(): Promise<Document[]> {
