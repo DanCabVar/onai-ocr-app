@@ -170,9 +170,27 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
 
       clearInterval(progressInterval)
 
-      // Update file items with actual results
+      // Backend may respond with async mode { processing: true, documentIds: [] }
+      // or sync mode { results: [...] }
+      const isAsync = (response as any).processing === true || !Array.isArray((response as any).results)
+
+      if (isAsync) {
+        // Background processing — just acknowledge and close
+        setFileItems(prev => prev.map(item => ({ ...item, status: "completed" as FileItemStatus })))
+        setStep("results")
+        toast({
+          title: "Documentos recibidos",
+          description: `${files.length} archivo(s) subidos. Se están procesando en segundo plano.`,
+        })
+        window.dispatchEvent(new CustomEvent("documentUploaded", { detail: response }))
+        return
+      }
+
+      // Sync mode — handle results array
+      const results: BatchDocumentResult[] = (response as any).results ?? []
+
       setFileItems(prev => prev.map((item, index) => {
-        const result = response.results[index]
+        const result = results[index]
         if (!result) return { ...item, status: "error" as FileItemStatus, error: "Sin resultado" }
         return {
           ...item,
@@ -184,13 +202,12 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
         }
       }))
 
-      setCompletedResults(response.results.filter(r => r.status === "completed"))
+      setCompletedResults(results.filter(r => r.status === "completed"))
 
       // Check if there are pending confirmations
-      const pending = response.results.filter(r => r.status === "pending_confirmation")
+      const pending = results.filter(r => r.status === "pending_confirmation")
       if (pending.length > 0) {
         setPendingDocs(pending)
-        // Initialize actions as "confirm" for all
         const actions: Record<number, { action: "confirm" | "cancel"; typeName?: string }> = {}
         pending.forEach(doc => {
           if (doc.documentId) {
@@ -203,7 +220,7 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
         setStep("results")
         toast({
           title: "Lote procesado",
-          description: `${response.totalSuccess} de ${response.totalProcessed} archivos procesados exitosamente`,
+          description: `${(response as any).totalSuccess ?? results.filter(r=>r.status==="completed").length} de ${(response as any).totalProcessed ?? results.length} archivos procesados exitosamente`,
         })
         window.dispatchEvent(new CustomEvent("documentUploaded", { detail: response }))
       }
