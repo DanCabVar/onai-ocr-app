@@ -158,19 +158,31 @@ export default function DashboardPage() {
       time: formatRelativeTime(doc.createdAt),
     }))
 
-  // Chart data: documents processed per day (last 14 days, using local timezone)
+  // Chart data: documents processed per day (last 14 days)
+  // Use LOCAL date keys throughout to avoid UTC-shift mismatches when the
+  // backend returns timestamps without explicit timezone info.
   const chartData = useMemo(() => {
     const now = new Date()
     const days: { date: string; label: string; completados: number; errores: number; total: number }[] = []
+
+    // Helper: "YYYY-MM-DD" in local time
+    const localDateKey = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+
+    // Pre-build local-date keys for all documents once
+    const docDateKeys = documents.map((doc) => {
+      // Normalise: some backends omit the "Z" on UTC timestamps
+      const raw = doc.createdAt
+      const normalised = raw && !raw.endsWith("Z") && !raw.includes("+") ? raw + "Z" : raw
+      return localDateKey(new Date(normalised))
+    })
+
     for (let i = 13; i >= 0; i--) {
       const d = new Date(now)
       d.setDate(d.getDate() - i)
-      // Use local date key to avoid UTC vs local timezone mismatch
-      const key = toLocalDateKey(d)
+      const key = localDateKey(d)
       const label = d.toLocaleDateString("es-ES", { day: "2-digit", month: "short" })
-      const dayDocs = documents.filter(
-        (doc) => toLocalDateKey(new Date(doc.createdAt)) === key
-      )
+      const dayDocs = documents.filter((_, idx) => docDateKeys[idx] === key)
       days.push({
         date: key,
         label,
@@ -186,9 +198,11 @@ export default function DashboardPage() {
   const thisMonth = new Date()
   thisMonth.setDate(1)
   thisMonth.setHours(0, 0, 0, 0)
-  const newTypesThisMonth = documentTypes.filter(
-    (dt) => new Date(dt.createdAt) >= thisMonth
-  ).length
+  const newTypesThisMonth = documentTypes.filter((dt) => {
+    const raw = dt.createdAt
+    const normalised = raw && !raw.endsWith("Z") && !raw.includes("+") ? raw + "Z" : raw
+    return new Date(normalised) >= thisMonth
+  }).length
 
   // Status badge helper
   function getStatusBadge(status: string) {
@@ -462,17 +476,10 @@ export default function DashboardPage() {
         {/* Chart: Documentos procesados por día */}
         <Card className="rounded-2xl">
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg font-primary flex items-center gap-2">
-                <BarChart3 className="h-5 w-5 text-primary" />
-                Documentos Procesados (últimos 14 días)
-              </CardTitle>
-              {!isLoading && (
-                <span className="text-sm text-muted-foreground font-secondary">
-                  {chartData.reduce((sum, d) => sum + d.total, 0)} en período
-                </span>
-              )}
-            </div>
+            <CardTitle className="text-lg font-primary flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              Documentos Procesados (últimos 14 días)
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -503,7 +510,6 @@ export default function DashboardPage() {
                     />
                     <YAxis
                       allowDecimals={false}
-                      domain={[0, "auto"]}
                       tick={{ fontSize: 11 }}
                       className="fill-muted-foreground"
                       tickLine={false}
@@ -887,14 +893,6 @@ export default function DashboardPage() {
       </div>
     </div>
   )
-}
-
-// Helper: get local date string YYYY-MM-DD (avoids UTC vs local timezone mismatch)
-function toLocalDateKey(date: Date): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, "0")
-  const d = String(date.getDate()).padStart(2, "0")
-  return `${y}-${m}-${d}`
 }
 
 // Helper: relative time formatting
