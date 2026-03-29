@@ -76,6 +76,19 @@ class DocumentTypeInferenceService {
 
     return response.data;
   }
+
+  // Alias para compatibilidad con el modal
+  async inferFromSamplesWithProgress(
+    files: File[],
+    uploadSamples: boolean = false,
+    onProgress?: (stage: string, current: number, total: number) => void,
+  ): Promise<InferFromSamplesResponse> {
+    // onProgress is simulated — backend doesn't emit events yet
+    if (onProgress) onProgress('uploading', 0, files.length);
+    const result = await this.inferFromSamples(files, uploadSamples);
+    if (onProgress) onProgress('done', files.length, files.length);
+    return result;
+  }
 }
 
 export const documentTypeInferenceService = new DocumentTypeInferenceService();
