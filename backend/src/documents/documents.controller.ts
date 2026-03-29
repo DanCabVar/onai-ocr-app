@@ -108,20 +108,21 @@ export class DocumentsController {
 
   @Post('confirm-type')
   async confirmType(
-    @Body() body: { documentId: number; action: 'create_type' | 'cancel'; typeName?: string },
+    @Body() body: { documentId: number; action: 'create_type' | 'assign_type' | 'cancel'; typeName?: string; typeId?: number },
     @CurrentUser() user: User,
   ) {
     if (!body.documentId || !body.action) {
       throw new BadRequestException('Se requiere documentId y action');
     }
-    if (!['create_type', 'cancel'].includes(body.action)) {
-      throw new BadRequestException('action debe ser "create_type" o "cancel"');
+    if (!['create_type', 'assign_type', 'cancel'].includes(body.action)) {
+      throw new BadRequestException('action debe ser "create_type", "assign_type" o "cancel"');
     }
     return this.documentsService.confirmType(
       body.documentId,
       body.action,
       user,
       body.typeName,
+      body.typeId,
     );
   }
 
@@ -173,4 +174,16 @@ export class DocumentsController {
   ) {
     return this.documentsService.deleteDocument(id, user);
   }
+
+  @Post('upload-to-inbox')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FilesInterceptor('files', 50, { limits: { fileSize: 50 * 1024 * 1024 } }))
+  async uploadToInbox(
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: User,
+  ) {
+    if (!files || files.length === 0) throw new BadRequestException('No se recibieron archivos');
+    return this.documentsService.uploadToInbox(files, user);
+  }
+
 }

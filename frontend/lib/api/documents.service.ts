@@ -139,13 +139,15 @@ export const documentsService = {
    */
   async confirmType(
     documentId: number,
-    action: 'confirm' | 'cancel',
+    action: 'create_type' | 'assign_type' | 'cancel',
     typeName?: string,
-  ): Promise<ConfirmTypeResponse> {
-    const response = await apiClient.post<ConfirmTypeResponse>('/documents/confirm-type', {
+    typeId?: number,
+  ): Promise<ConfirmTypeResponse & { lowConfidence?: boolean }> {
+    const response = await apiClient.post<ConfirmTypeResponse & { lowConfidence?: boolean }>('/documents/confirm-type', {
       documentId,
       action,
       typeName,
+      typeId,
     });
     return response.data;
   },

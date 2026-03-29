@@ -491,3 +491,78 @@ export class DocumentsService {
     return this.storageService.getPresignedUrl(document.storageKey, 3600);
   }
 }
+
+  /**
+   * Upload files to inbox (originals/) without processing.
+   * Returns document IDs for polling.
+   */
+  async uploadToInbox(files: Express.Multer.File[], user: User) {
+    this.logger.log(`📥 Inbox upload: ${files.length} archivos para usuario ${user.id}`);
+    const documentIds: number[] = [];
+
+    for (const file of files) {
+      const key = this.storageService.buildKey(user.id, 'originals', `${Date.now()}-${file.originalname}`);
+      await this.storageService.uploadFile(file.buffer, key, file.mimetype);
+
+      const doc = this.documentRepository.create({
+        userId: user.id,
+        filename: file.originalname,
+        storageKey: key,
+        storageProvider: 'r2',
+        status: 'queued',
+      });
+      await this.documentRepository.save(doc);
+      documentIds.push(doc.id);
+    }
+
+    // Trigger background processing
+    this.processQueuedInBackground(user);
+
+    return {
+      success: true,
+      message: `${files.length} archivo(s) en cola. Procesando en segundo plano.`,
+      documentIds,
+      processing: true,
+    };
+  }
+
+  /**
+   * Process queued documents for a user in background.
+   */
+  private processQueuedInBackground(user: User): void {
+    (async () => {
+      try {
+        const queued = await this.documentRepository.find({
+          where: { userId: user.id, status: 'queued' },
+          take: 20,
+        });
+        if (queued.length === 0) return;
+
+        this.logger.log(`⚙️ Processing ${queued.length} queued docs for user ${user.id}`);
+
+        // Process in batches of 5
+        for (let i = 0; i < queued.length; i += 5) {
+          const batch = queued.slice(i, i + 5);
+          await Promise.all(batch.map(async (doc) => {
+            try {
+              await this.documentRepository.update(doc.id, { status: 'processing' });
+              const fileBuffer = await this.storageService.downloadFile(doc.storageKey);
+              const file = {
+                buffer: fileBuffer,
+                originalname: doc.filename,
+                mimetype: doc.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg',
+              } as Express.Multer.File;
+              await this.documentProcessingService.processDocument(fileBuffer, doc.filename, file.mimetype, user);
+              // Remove the inbox record — processDocument creates a new one
+              await this.documentRepository.remove(doc);
+            } catch (e) {
+              this.logger.error(`Failed processing queued doc ${doc.id}: ${e.message}`);
+              await this.documentRepository.update(doc.id, { status: 'error' });
+            }
+          }));
+        }
+      } catch (e) {
+        this.logger.error(`processQueuedInBackground error: ${e.message}`);
+      }
+    })();
+  }

@@ -26,11 +26,6 @@ export class Document {
   @Column()
   filename: string;
 
-  @Column({ name: 'google_drive_link', type: 'text', nullable: true })
-  googleDriveLink: string;
-
-  @Column({ name: 'google_drive_file_id', nullable: true })
-  googleDriveFileId: string;
 
   /** R2 object key — e.g. {user_id}/originals/{filename} */
   @Column({ name: 'storage_key', type: 'text', nullable: true })

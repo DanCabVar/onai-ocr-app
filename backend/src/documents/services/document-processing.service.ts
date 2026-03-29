@@ -138,8 +138,7 @@ export class DocumentProcessingService {
    * 3. OCR with Mistral (check cache first by content hash)
    * 4. Classify with Gemini
    * 5. Extract structured data with Gemini Vision
-   * 6. Save extracted JSON to R2
-   * 7. Save document record in DB
+   * 6. Save document record in DB (extractedData stored as JSONB)
    */
   async processDocument(
     fileBuffer: Buffer,
@@ -285,19 +284,7 @@ export class DocumentProcessingService {
       // Guard against Python-style strings that may come from AI responses
       extractedData = this.ensureValidJsonData(extractedData);
 
-      // ─── PASO 6: Save extracted JSON to R2 ───
-      const saveJsonMetric = this.metrics.startStage(ctx, 'save-json-r2');
-      const extractedKey = this.storageService.buildKey(
-        user.id,
-        'extracted',
-        `${Date.now()}-${originalName.replace(/\.[^.]+$/, '')}.json`,
-      );
-      await this.storageService.uploadFile(
-        Buffer.from(JSON.stringify(extractedData, null, 2)),
-        extractedKey,
-        'application/json',
-      );
-      this.metrics.endStage(saveJsonMetric);
+      // PASO 6 removed: extractedData is stored in DB (JSONB) — no need for R2 copy
 
       // Generate view URL (7 days)
       const viewUrl = await this.storageService.getPresignedUrl(originalKey, 7 * 24 * 3600);
@@ -310,8 +297,6 @@ export class DocumentProcessingService {
         filename: originalName,
         storageKey: originalKey,
         storageProvider: 'r2',
-        googleDriveLink: viewUrl,
-        googleDriveFileId: null,
         ocrRawText: ocrResult.text,
         extractedData,
         inferredData: (classification.isOthers ? inferredData : null) as any,
@@ -717,19 +702,7 @@ export class DocumentProcessingService {
         item.classification.extraction || { summary: 'Sin resumen', fields: [] },
       );
 
-      // Save extracted JSON to R2
-      const extractedKey = this.storageService.buildKey(
-        user.id,
-        'extracted',
-        `${Date.now()}-${item.file.originalname.replace(/\.[^.]+$/, '')}.json`,
-      );
-      await this.storageService.uploadFile(
-        Buffer.from(JSON.stringify(extractedData, null, 2)),
-        extractedKey,
-        'application/json',
-      );
-
-      // Also copy to typed storage path
+      // Save to typed storage path (extracted/ removed — data lives in JSONB)
       const typedKey = this.storageService.buildTypedKey(
         user.id,
         matchedType!.name,
@@ -745,8 +718,6 @@ export class DocumentProcessingService {
         filename: item.file.originalname,
         storageKey: item.storageKey,
         storageProvider: 'r2',
-        googleDriveLink: viewUrl,
-        googleDriveFileId: null,
         ocrRawText: item.ocrText,
         extractedData,
         inferredData: null,
@@ -918,9 +889,10 @@ If no merges needed, return {"merges":[]}. JSON only.`;
    */
   async confirmDocumentType(
     documentId: number,
-    action: 'create_type' | 'cancel',
+    action: 'create_type' | 'assign_type' | 'cancel',
     user: User,
     typeName?: string,
+    typeId?: number,
   ): Promise<{ success: boolean; message: string; document?: any; documentType?: any }> {
     const document = await this.documentRepository.findOne({
       where: { id: documentId, userId: user.id },
@@ -949,6 +921,70 @@ If no merges needed, return {"merges":[]}. JSON only.`;
       return {
         success: true,
         message: `Documento "${document.filename}" eliminado`,
+      };
+    }
+
+    // ─── action === 'assign_type' — extract using existing type schema ───
+    if (action === 'assign_type') {
+      if (!typeId) throw new BadRequestException('typeId es requerido para assign_type');
+
+      const existingType = await this.documentTypeRepository.findOne({
+        where: { id: typeId, userId: user.id },
+      });
+      if (!existingType) throw new BadRequestException('Tipo de documento no encontrado');
+
+      let extractedData: any = null;
+      let lowConfidence = false;
+      try {
+        if (document.storageKey) {
+          const fileBuffer = await this.storageService.downloadFile(document.storageKey);
+          const mimeType = document.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
+          extractedData = await this.geminiClassifierService.extractDataWithVision(fileBuffer, mimeType, existingType);
+        } else if (document.ocrRawText) {
+          extractedData = await this.geminiClassifierService.extractData(document.ocrRawText, existingType);
+        }
+        // Check if any fields were populated
+        const fields = extractedData?.fields || [];
+        const populated = fields.filter((f: any) => f.value !== null && f.value !== '' && f.value !== undefined);
+        if (populated.length === 0) {
+          lowConfidence = true;
+          this.logger.warn(`assign_type: no fields matched schema for doc ${document.id}`);
+        }
+      } catch (e) {
+        this.logger.warn(`assign_type extraction failed: ${e.message}`);
+        extractedData = { fields: [] };
+        lowConfidence = true;
+      }
+
+      // Move to typed storage
+      if (document.storageKey) {
+        try {
+          const fileBuffer = await this.storageService.downloadFile(document.storageKey);
+          const mimeType = document.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
+          const typedKey = this.storageService.buildTypedKey(user.id, existingType.name, document.filename);
+          await this.storageService.uploadFile(fileBuffer, typedKey, mimeType);
+          // Delete from originals
+          await this.storageService.deleteFile(document.storageKey).catch(() => {});
+          document.storageKey = typedKey;
+        } catch (e) {
+          this.logger.warn(`assign_type storage move failed: ${e.message}`);
+        }
+      }
+
+      document.documentTypeId = existingType.id;
+      document.extractedData = this.ensureValidJsonData(extractedData);
+      document.status = 'completed';
+      await this.documentRepository.save(document);
+      await this.subscriptionsService.incrementUsage(user.id);
+
+      return {
+        success: true,
+        lowConfidence,
+        message: lowConfidence
+          ? `Documento asignado al tipo "${existingType.name}" pero no se encontraron campos coincidentes`
+          : `Documento "${document.filename}" asignado al tipo "${existingType.name}"`,
+        document: { id: document.id, filename: document.filename, documentTypeId: existingType.id, extractedData, status: 'completed' },
+        documentType: { id: existingType.id, name: existingType.name },
       };
     }
 
