@@ -204,7 +204,9 @@ ${typeDescriptions}
 
 Schema de la base de datos:
 
-  Tabla: documents
+IMPORTANTE: SOLO puedes consultar las vistas my_documents y my_document_types. NUNCA uses las tablas documents o document_types directamente.
+
+  Vista: my_documents (equivalente a documents filtrado por el usuario actual)
     - id: integer PK
     - user_id: integer (SIEMPRE filtrar por este campo)
     - document_type_id: integer FK → document_types.id
@@ -217,7 +219,7 @@ Schema de la base de datos:
     - updated_at: timestamptz
     - storage_key: text
 
-  Tabla: document_types
+  Vista: my_document_types (equivalente a document_types filtrado por el usuario actual)
     - id: integer PK
     - user_id: integer
     - name: varchar
@@ -229,14 +231,14 @@ Patrones de acceso JSONB para extracted_data:
   - Campo "fields" es un array de objetos: [{name, value, type, label}]
   - Para acceder a un campo específico por nombre, usa jsonb_array_elements:
       SELECT d.*, f->>'value' AS valor
-      FROM documents d, jsonb_array_elements(d.extracted_data->'fields') f
+      FROM my_documents d, jsonb_array_elements(d.extracted_data->'fields') f
       WHERE f->>'name' = 'nombre_campo' AND d.user_id = $1
   - Para sumar valores numéricos de un campo:
       SELECT SUM((f->>'value')::numeric)
-      FROM documents d, jsonb_array_elements(d.extracted_data->'fields') f
+      FROM my_documents d, jsonb_array_elements(d.extracted_data->'fields') f
       WHERE f->>'name' = 'monto' AND d.user_id = $1
   - Para docs inferidos (Otros): inferred_data->'key_fields' tiene la misma estructura
-  - Para filtrar por tipo: JOIN document_types dt ON d.document_type_id = dt.id
+  - Para filtrar por tipo: JOIN my_document_types dt ON d.document_type_id = dt.id
 
 IMPORTANTE: user_id siempre se pasa como parámetro $1. Usa $1 en WHERE, nunca el valor directo.`;
   }
@@ -259,7 +261,7 @@ REGLAS:
 2. Solo SELECT. Sin INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/TRUNCATE.
 3. LIMIT máximo ${MAX_ROWS}
 4. Para campos JSONB usa jsonb_array_elements como se indica arriba
-5. JOIN document_types si necesitas el nombre del tipo
+5. JOIN my_document_types si necesitas el nombre del tipo
 6. Si la pregunta no es sobre documentos/datos, responde: NO_SQL
 7. Una sola query, sin punto y coma
 
@@ -341,6 +343,9 @@ Solo la query SQL, sin backticks ni explicaciones. Si no puedes, responde: NO_SQ
     try {
       await queryRunner.query('BEGIN READ ONLY');
       await queryRunner.query(`SET LOCAL statement_timeout = ${QUERY_TIMEOUT_MS}`);
+      // Capa 2 de aislamiento multi-tenant: RLS via variable de sesión
+      // Aunque la IA olvide el filtro WHERE user_id, la DB rechaza filas ajenas
+      await queryRunner.query(`SET LOCAL app.current_user_id = ${params[0]}`);
 
       const rows = await queryRunner.query(sql, params);
 
