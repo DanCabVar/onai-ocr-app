@@ -192,5 +192,13 @@ export const documentsService = {
     const response = await apiClient.get<Document>(`/documents/${id}`);
     return response.data;
   },
+
+  /**
+   * Elimina un documento (DB + R2)
+   */
+  async delete(id: number): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.delete(`/documents/${id}`);
+    return response.data;
+  },
 };
 

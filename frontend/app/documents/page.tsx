@@ -213,10 +213,24 @@ export default function DocumentsPage() {
 
   const handleDelete = async (doc: Document) => {
     if (!confirm(`¿Eliminar "${doc.filename}"? Esta acción no se puede deshacer.`)) return
-    toast({
-      title: "Eliminación",
-      description: `El documento "${doc.filename}" será eliminado próximamente.`,
-    })
+    setActionLoading(doc.id)
+    try {
+      await documentsService.delete(doc.id)
+      toast({
+        title: "Documento eliminado",
+        description: `"${doc.filename}" fue eliminado correctamente.`,
+      })
+      await loadData()
+      if (selectedDoc?.id === doc.id) setSelectedDoc(null)
+    } catch (err: any) {
+      toast({
+        title: "Error al eliminar",
+        description: err?.response?.data?.message || err.message || "No se pudo eliminar el documento.",
+        variant: "destructive",
+      })
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   const renderFieldValue = (field: DocumentField) => {

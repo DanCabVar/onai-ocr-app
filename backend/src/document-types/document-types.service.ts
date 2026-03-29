@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   ForbiddenException,
+  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -155,25 +156,16 @@ export class DocumentTypesService {
 
     const documentCount = documentType.documents?.length || 0;
 
-    // Construir mensajes de advertencia
-    const warnings: string[] = [];
-
+    // No permitir eliminar si tiene documentos asociados
     if (documentCount > 0) {
-      warnings.push(
-        `⚠️ Se eliminarán automáticamente ${documentCount} documento(s) asociado(s) de la base de datos.`,
+      throw new BadRequestException(
+        `No se puede eliminar el tipo "${documentType.name}" porque tiene ${documentCount} documento(s) asociado(s). Elimina los documentos primero.`,
       );
     }
 
     this.logger.warn(
       `Eliminando tipo de documento: ${documentType.name} (ID: ${documentType.id})`,
     );
-
-    if (documentCount > 0) {
-      this.logger.warn(
-        `Se eliminarán en cascada ${documentCount} documentos asociados.`,
-      );
-    }
-
 
     await this.documentTypeRepository.remove(documentType);
     this.documentProcessingService.invalidateTypesCache();
