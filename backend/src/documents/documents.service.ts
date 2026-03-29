@@ -12,31 +12,26 @@ import { User } from '../database/entities/user.entity';
 import { DocumentProcessingService } from './services/document-processing.service';
 import { StorageService } from '../storage/storage.service';
 
+
 /**
  * Normalises a value that may be stored as a Python dict string (single-quoted keys/values,
  * Python True/False/None) into a proper JS object.
- * Returns the original value unchanged if it is already an object/array or cannot be parsed.
  */
 function normalisePythonDictString(value: any): any {
   if (value === null || value === undefined) return value;
-  if (typeof value !== 'string') return value; // already an object — nothing to do
-
+  if (typeof value !== 'string') return value;
   try {
-    // Fast path: valid JSON
     return JSON.parse(value);
   } catch {
-    // Slow path: attempt Python → JSON conversion
     try {
       const json = value
-        .replace(/'/g, '"')          // single quotes → double quotes
+        .replace(/'/g, '"')
         .replace(/\bTrue\b/g, 'true')
         .replace(/\bFalse\b/g, 'false')
-        .replace(/\bNone\b/g, 'null')
-        .replace(/,(\s*[}\]])/g, '$1'); // trailing commas
+        .replace(/\bNone\b/g, 'null');
       return JSON.parse(json);
     } catch {
-      // Cannot parse — return a safe fallback object so the UI never crashes
-      return { summary: value, fields: [] };
+      return value;
     }
   }
 }
@@ -163,15 +158,42 @@ export class DocumentsService {
     })();
   }
 
-  async getDocuments(user: User) {
-    const documents = await this.documentRepository.find({
+  /**
+   * Attempt to parse extractedData that may be stored as a Python-style string
+   * (single quotes instead of valid JSON). Returns a parsed object or null.
+   */
+  private sanitizeExtractedData(raw: any): any {
+    if (raw === null || raw === undefined) return null;
+    if (typeof raw !== 'string') return raw; // already parsed (object/array)
+
+    // Try 1: valid JSON
+    try {
+      return JSON.parse(raw);
+    } catch {
+      // Try 2: Python-style single-quote dict → replace ' with "
+      try {
+        const fixed = raw.replace(/'/g, '"');
+        return JSON.parse(fixed);
+      } catch {
+        // Give up — return null instead of broken string
+        return null;
+      }
+    }
+  }
+
+  async getDocuments(user: User, page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+
+    const [documents, total] = await this.documentRepository.findAndCount({
       where: { userId: user.id },
       order: { createdAt: 'DESC' },
       relations: ['documentType'],
+      skip,
+      take: limit,
     });
 
     // Generate fresh presigned URLs for R2-stored docs
-    const results = await Promise.all(
+    const items = await Promise.all(
       documents.map(async (doc) => {
         let fileUrl = doc.googleDriveLink; // legacy fallback
 
@@ -190,20 +212,28 @@ export class DocumentsService {
           documentTypeName: doc.documentType?.name || null,
           fileUrl,
           storageProvider: doc.storageProvider || 'google_drive',
-          extractedData: normalisePythonDictString(doc.extractedData),
-          inferredData: normalisePythonDictString(doc.inferredData),
+          extractedData: this.sanitizeExtractedData(doc.extractedData),
+          inferredData: doc.inferredData,
           confidenceScore: doc.confidenceScore,
           status: doc.status,
           createdAt: doc.createdAt,
           updatedAt: doc.updatedAt,
-          // Legacy fields (deprecated)
-          googleDriveLink: doc.googleDriveLink,
-          googleDriveFileId: doc.googleDriveFileId,
+          // Legacy fields: only expose for Google Drive documents
+          ...(doc.storageProvider !== 'r2' && {
+            googleDriveLink: doc.googleDriveLink,
+            googleDriveFileId: doc.googleDriveFileId,
+          }),
         };
       }),
     );
 
-    return results;
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /**
@@ -295,16 +325,18 @@ export class DocumentsService {
       fileUrl,
       storageProvider: document.storageProvider || 'google_drive',
       storageKey: document.storageKey,
-      extractedData: normalisePythonDictString(document.extractedData),
-      inferredData: normalisePythonDictString(document.inferredData),
+      extractedData: this.sanitizeExtractedData(document.extractedData),
+      inferredData: document.inferredData,
       ocrRawText: document.ocrRawText,
       confidenceScore: document.confidenceScore,
       status: document.status,
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
-      // Legacy fields (deprecated)
-      googleDriveLink: document.googleDriveLink,
-      googleDriveFileId: document.googleDriveFileId,
+      // Legacy fields: only expose for Google Drive documents
+      ...(document.storageProvider !== 'r2' && {
+        googleDriveLink: document.googleDriveLink,
+        googleDriveFileId: document.googleDriveFileId,
+      }),
     };
   }
 
