@@ -208,16 +208,16 @@ export default function DocumentTypesPage() {
                     onClick={() => handleCardClick(type)}
                   >
                     <CardContent className="p-5">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-3">
+                      <div className="flex items-start justify-between mb-3 gap-2 min-w-0">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
                             <FileText className="h-5 w-5 text-primary" />
                           </div>
-                          <div className="min-w-0">
-                            <h3 className="font-semibold font-primary text-sm truncate">{type.name}</h3>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-semibold font-primary text-sm truncate break-words">{type.name}</h3>
                           </div>
                         </div>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-auto">
                           <Button
                             variant="ghost"
                             size="icon"
