@@ -173,7 +173,7 @@ export class DocumentTypesService {
     return {
       message: `Tipo de documento "${documentType.name}" eliminado exitosamente.`,
       deletedDocumentsCount: documentCount,
-      warnings: warnings.length > 0 ? warnings : undefined,
+
     };
   }
 }
