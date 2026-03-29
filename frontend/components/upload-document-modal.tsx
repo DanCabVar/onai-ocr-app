@@ -679,7 +679,7 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
                 Cancelar
               </Button>
               {fileItems.length > 0 && (
-                <div className="flex items-center gap-4">
+                <div className="flex flex-col items-end gap-2 w-full sm:w-auto">
                   <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
                     <input
                       type="checkbox"
@@ -687,11 +687,11 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
                       onChange={e => setBackgroundMode(e.target.checked)}
                       className="rounded"
                     />
-                    Procesar en segundo plano
+                    <span>Procesar en segundo plano</span>
                   </label>
-                  <Button onClick={handleUpload} className="gap-2">
+                  <Button onClick={handleUpload} className="gap-2 w-full sm:w-auto">
                     <Upload className="h-4 w-4" />
-                    {backgroundMode ? "Subir a cola" : `Subir y Procesar`} ({fileItems.length} archivo{fileItems.length > 1 ? "s" : ""})
+                    {backgroundMode ? "Subir a cola" : "Subir y Procesar"} ({fileItems.length})
                   </Button>
                 </div>
               )}
