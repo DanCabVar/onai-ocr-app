@@ -291,7 +291,7 @@ export default function DocumentsPage() {
           </div>
         )}
 
-                {/* Mini Stats */
+                {/* Mini Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <button
             onClick={() => setStatusFilter("all")}
