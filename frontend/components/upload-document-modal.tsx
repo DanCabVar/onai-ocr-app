@@ -16,6 +16,7 @@ import {
 import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/hooks/use-toast"
 import { documentsService, BatchDocumentResult } from "@/lib/api/documents.service"
+import { documentTypesService } from "@/lib/api/document-types.service"
 import { cn } from "@/lib/utils"
 
 interface UploadDocumentModalProps {
@@ -55,8 +56,9 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
   const [isDragOver, setIsDragOver] = useState(false)
   const [uploadPercent, setUploadPercent] = useState(0)
   const [pendingDocs, setPendingDocs] = useState<BatchDocumentResult[]>([])
-  const [pendingActions, setPendingActions] = useState<Record<number, { action: "confirm" | "cancel"; typeName?: string }>>({})
+  const [pendingActions, setPendingActions] = useState<Record<number, { action: "confirm" | "assign_type" | "cancel"; typeName?: string; typeId?: number }>>({})
   const [confirmingAll, setConfirmingAll] = useState(false)
+  const [availableTypes, setAvailableTypes] = useState<{ id: number; name: string }[]>([])
   const [completedResults, setCompletedResults] = useState<BatchDocumentResult[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
@@ -208,13 +210,17 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
       const pending = results.filter(r => r.status === "pending_confirmation")
       if (pending.length > 0) {
         setPendingDocs(pending)
-        const actions: Record<number, { action: "confirm" | "cancel"; typeName?: string }> = {}
+        const actions: Record<number, { action: "confirm" | "assign_type" | "cancel"; typeName?: string; typeId?: number }> = {}
         pending.forEach(doc => {
           if (doc.documentId) {
             actions[doc.documentId] = { action: "confirm", typeName: doc.suggestedType }
           }
         })
         setPendingActions(actions)
+        // Cargar tipos disponibles para opción assign_type
+        documentTypesService.getAll().then(types => {
+          setAvailableTypes(types.map(t => ({ id: t.id, name: t.name })))
+        }).catch(() => {})
         setStep("confirming")
       } else {
         setStep("results")
@@ -260,14 +266,16 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
         if (!action) continue
 
         try {
+          const apiAction = action.action === "confirm" ? "create_type" : action.action === "assign_type" ? "assign_type" : "cancel"
           const response = await documentsService.confirmType(
             doc.documentId,
-            action.action,
+            apiAction as any,
             action.action === "confirm" ? action.typeName : undefined,
+            action.action === "assign_type" ? action.typeId : undefined,
           )
           results.push({
             ...doc,
-            status: action.action === "confirm" ? "completed" : "error",
+            status: (action.action === "cancel") ? "error" : "completed",
             error: action.action === "cancel" ? "Cancelado por el usuario" : undefined,
           })
         } catch (err: any) {
@@ -502,57 +510,89 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
                 <div className="flex items-start gap-2">
                   <AlertCircle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
                   <p className="text-sm text-yellow-700 dark:text-yellow-400">
-                    Estos documentos no coinciden con tipos existentes. La IA sugirió un tipo para cada uno.
+                    Estos documentos no coinciden con ningún tipo existente. Elige qué hacer con cada uno.
                   </p>
                 </div>
               </div>
 
-              <div className="space-y-2 max-h-64 overflow-y-auto">
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
                 {pendingDocs.map((doc) => {
                   const docId = doc.documentId!
                   const action = pendingActions[docId]
-                  const isConfirm = action?.action === "confirm"
+                  const currentAction = action?.action ?? "confirm"
 
                   return (
-                    <div
-                      key={docId}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-3 rounded-lg border transition-colors",
-                        isConfirm
-                          ? "border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/20"
-                          : "border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/20"
-                      )}
-                    >
-                      <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{doc.filename}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Tipo sugerido: <span className="font-semibold text-primary">{doc.suggestedType}</span>
-                        </p>
+                    <div key={docId} className="border rounded-lg p-3 space-y-2 bg-card">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <p className="text-sm font-medium truncate flex-1">{doc.filename}</p>
+                        {doc.suggestedType && (
+                          <span className="text-xs text-muted-foreground">IA sugiere: <span className="font-semibold text-primary">{doc.suggestedType}</span></span>
+                        )}
                       </div>
-                      <div className="flex gap-1 flex-shrink-0">
-                        <Button
-                          variant={isConfirm ? "default" : "outline"}
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            if (!isConfirm) togglePendingAction(docId)
-                          }}
+
+                      {/* 3 opciones */}
+                      <div className="flex flex-col gap-1.5">
+                        {/* Opción 1: Crear nuevo tipo */}
+                        <button
+                          onClick={() => setPendingActions(prev => ({ ...prev, [docId]: { ...prev[docId], action: "confirm" } }))}
+                          className={cn(
+                            "flex items-center gap-2 px-3 py-2 rounded-md text-sm text-left border transition-colors",
+                            currentAction === "confirm"
+                              ? "border-primary bg-primary/10 text-primary font-medium"
+                              : "border-border hover:bg-accent"
+                          )}
                         >
-                          <CheckCircle2 className="h-3 w-3 mr-1" />
-                          Crear
-                        </Button>
-                        <Button
-                          variant={!isConfirm ? "destructive" : "outline"}
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            if (isConfirm) togglePendingAction(docId)
-                          }}
+                          <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0" />
+                          <span>Crear nuevo tipo "{action?.typeName || doc.suggestedType}"</span>
+                        </button>
+
+                        {/* Opción 2: Extraer con tipo existente */}
+                        <div className={cn(
+                          "border rounded-md transition-colors",
+                          currentAction === "assign_type" ? "border-blue-400 bg-blue-50 dark:bg-blue-950/20" : "border-border"
+                        )}>
+                          <button
+                            onClick={() => setPendingActions(prev => ({ ...prev, [docId]: { ...prev[docId], action: "assign_type" } }))}
+                            className="flex items-center gap-2 px-3 py-2 text-sm text-left w-full"
+                          >
+                            <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-blue-500" />
+                            <span className={cn(currentAction === "assign_type" && "font-medium text-blue-700 dark:text-blue-400")}>
+                              Extraer con tipo existente
+                            </span>
+                          </button>
+                          {currentAction === "assign_type" && (
+                            <div className="px-3 pb-2">
+                              <select
+                                className="w-full text-xs border rounded px-2 py-1 bg-background"
+                                value={action?.typeId ?? ""}
+                                onChange={e => setPendingActions(prev => ({
+                                  ...prev,
+                                  [docId]: { ...prev[docId], action: "assign_type", typeId: Number(e.target.value) }
+                                }))}
+                              >
+                                <option value="">— Selecciona un tipo —</option>
+                                {availableTypes.map(t => (
+                                  <option key={t.id} value={t.id}>{t.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Opción 3: Cancelar */}
+                        <button
+                          onClick={() => setPendingActions(prev => ({ ...prev, [docId]: { ...prev[docId], action: "cancel" } }))}
+                          className={cn(
+                            "flex items-center gap-2 px-3 py-2 rounded-md text-sm text-left border transition-colors",
+                            currentAction === "cancel"
+                              ? "border-destructive bg-destructive/10 text-destructive font-medium"
+                              : "border-border hover:bg-accent"
+                          )}
                         >
-                          <Ban className="h-3 w-3 mr-1" />
-                          Cancelar
-                        </Button>
+                          <Ban className="h-3.5 w-3.5 flex-shrink-0" />
+                          <span>Cancelar — eliminar documento</span>
+                        </button>
                       </div>
                     </div>
                   )

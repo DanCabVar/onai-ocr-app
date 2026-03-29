@@ -64,8 +64,6 @@ export interface CreatedDocumentType {
   description: string;
   fieldCount: number;
   sampleDocumentCount: number;
-  googleDriveFolderId: string;
-  folderPath: string;
   fields: ConsolidatedField[];
 }
 

@@ -21,7 +21,7 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
   const [state, setState] = useState<ModalState>('upload')
   const [files, setFiles] = useState<File[]>([])
   const [isDragging, setIsDragging] = useState(false)
-  const [uploadSamples, setUploadSamples] = useState(false)
+  const [uploadSamples, setUploadSamples] = useState(true)
   const [progress, setProgress] = useState(0)
   const [progressMessage, setProgressMessage] = useState('')
   const [createdTypes, setCreatedTypes] = useState<CreatedDocumentType[]>([])

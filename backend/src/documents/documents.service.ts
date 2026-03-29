@@ -195,7 +195,7 @@ export class DocumentsService {
     // Generate fresh presigned URLs for R2-stored docs
     const items = await Promise.all(
       documents.map(async (doc) => {
-        let fileUrl = doc.googleDriveLink; // legacy fallback
+        let fileUrl: string | null = null;
 
         if (doc.storageProvider === 'r2' && doc.storageKey) {
           try {
@@ -220,8 +220,6 @@ export class DocumentsService {
           updatedAt: doc.updatedAt,
           // Legacy fields: only expose for Google Drive documents
           ...(doc.storageProvider !== 'r2' && {
-            googleDriveLink: doc.googleDriveLink,
-            googleDriveFileId: doc.googleDriveFileId,
           }),
         };
       }),
@@ -308,7 +306,7 @@ export class DocumentsService {
     }
 
     // Generate fresh presigned URL for R2-stored docs
-    let fileUrl = document.googleDriveLink;
+    let fileUrl: string | null = null;
     if (document.storageProvider === 'r2' && document.storageKey) {
       try {
         fileUrl = await this.storageService.getPresignedUrl(document.storageKey, 3600);
@@ -334,8 +332,6 @@ export class DocumentsService {
       updatedAt: document.updatedAt,
       // Legacy fields: only expose for Google Drive documents
       ...(document.storageProvider !== 'r2' && {
-        googleDriveLink: document.googleDriveLink,
-        googleDriveFileId: document.googleDriveFileId,
       }),
     };
   }
@@ -449,15 +445,17 @@ export class DocumentsService {
    */
   async confirmType(
     documentId: number,
-    action: 'create_type' | 'cancel',
+    action: 'create_type' | 'assign_type' | 'cancel',
     user: User,
     typeName?: string,
+    typeId?: number,
   ) {
     return this.documentProcessingService.confirmDocumentType(
       documentId,
       action,
       user,
       typeName,
+      typeId,
     );
   }
 
@@ -482,12 +480,81 @@ export class DocumentsService {
 
     if (document.storageProvider !== 'r2' || !document.storageKey) {
       // Fallback to legacy Google Drive link
-      if (document.googleDriveLink) {
-        return document.googleDriveLink;
-      }
       throw new BadRequestException('Documento no tiene archivo en R2 ni Google Drive');
     }
 
     return this.storageService.getPresignedUrl(document.storageKey, 3600);
+  }
+
+  /**
+   * Upload files to inbox (originals/) without processing.
+   * Returns document IDs for polling.
+   */
+  async uploadToInbox(files: Express.Multer.File[], user: User) {
+    this.logger.log(`📥 Inbox upload: ${files.length} archivos para usuario ${user.id}`);
+    const documentIds: number[] = [];
+
+    for (const file of files) {
+      const key = this.storageService.buildKey(user.id, 'originals', `${Date.now()}-${file.originalname}`);
+      await this.storageService.uploadFile(file.buffer, key, file.mimetype);
+
+      const doc = this.documentRepository.create({
+        userId: user.id,
+        filename: file.originalname,
+        storageKey: key,
+        storageProvider: 'r2',
+        status: 'queued',
+      });
+      await this.documentRepository.save(doc);
+      documentIds.push(doc.id);
+    }
+
+    // Trigger background processing
+    this.processQueuedInBackground(user);
+
+    return {
+      success: true,
+      message: `${files.length} archivo(s) en cola. Procesando en segundo plano.`,
+      documentIds,
+      processing: true,
+    };
+  }
+
+  /**
+   * Process queued documents for a user in background.
+   */
+  private processQueuedInBackground(currentUser: User): void {
+    const userId = currentUser.id;
+    const self = this;
+    (async () => {
+      try {
+        const queued = await self.documentRepository.find({
+          where: { userId, status: 'queued' },
+          take: 20,
+        });
+        if (queued.length === 0) return;
+
+        self.logger.log(`⚙️ Processing ${queued.length} queued docs for user ${userId}`);
+
+        for (let i = 0; i < queued.length; i += 5) {
+          const batch = queued.slice(i, i + 5);
+          await Promise.all(batch.map(async (doc) => {
+            if (!doc) return;
+            try {
+              await self.documentRepository.update(doc.id, { status: 'processing' });
+              const fileBuffer = await self.storageService.downloadFile(doc.storageKey);
+              const mimeType = doc.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
+              await self.documentProcessingService.processDocument(fileBuffer, doc.filename, mimeType, currentUser);
+              await self.documentRepository.remove(doc);
+            } catch (e: any) {
+              self.logger.error(`Failed processing queued doc ${doc.id}: ${e.message}`);
+              await self.documentRepository.update(doc.id, { status: 'error' });
+            }
+          }));
+        }
+      } catch (e: any) {
+        self.logger.error(`processQueuedInBackground error: ${e.message}`);
+      }
+    })();
   }
 }

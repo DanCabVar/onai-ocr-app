@@ -42,11 +42,6 @@ export class DocumentType {
   @Column({ name: 'field_schema', type: 'jsonb' })
   fieldSchema: FieldSchema;
 
-  @Column({ name: 'folder_path', nullable: true })
-  folderPath: string;
-
-  @Column({ name: 'google_drive_folder_id', nullable: true })
-  googleDriveFolderId: string;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

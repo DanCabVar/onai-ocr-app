@@ -545,8 +545,6 @@ JSON only, sin texto adicional.`;
         name: group.canonicalName,
         description: consolidated.description,
         fieldSchema: { fields: normalizedFields },
-        googleDriveFolderId: null,
-        folderPath: null,
       });
 
       await this.documentTypeRepository.save(documentType);
@@ -570,8 +568,6 @@ JSON only, sin texto adicional.`;
             userId: user.id,
             documentTypeId: documentType.id,
             filename,
-            googleDriveLink: publicUrl,
-            googleDriveFileId: null,
             storageKey,
             storageProvider: 'r2',
             ocrRawText: item.doc.ocrText || null,
@@ -595,8 +591,6 @@ JSON only, sin texto adicional.`;
       description: isNewType ? documentType.description : `${documentType.description} (${reExtracted.length} docs agregados)`,
       fieldCount: consolidated.consolidatedFields.length,
       sampleDocumentCount: reExtracted.length,
-      googleDriveFolderId: documentType.googleDriveFolderId,
-      folderPath: documentType.folderPath,
       fields: consolidated.consolidatedFields,
     };
   }
@@ -830,8 +824,6 @@ JSON only.`;
           name: consolidated.typeName,
           description: consolidated.description,
           fieldSchema: { fields: normalizedFields },
-          googleDriveFolderId: null,
-          folderPath: null,
         });
 
         await this.documentTypeRepository.save(documentType);
@@ -848,8 +840,6 @@ JSON only.`;
               userId: user.id,
               documentTypeId: documentType.id,
               filename: doc.filename,
-              googleDriveLink: publicUrl,
-              googleDriveFileId: null,
               storageKey,
               storageProvider: 'r2',
               ocrRawText: null,
@@ -876,8 +866,6 @@ JSON only.`;
           description: documentType.description,
           fieldCount: consolidated.consolidatedFields.length,
           sampleDocumentCount: consolidated.sampleCount,
-          googleDriveFolderId: documentType.googleDriveFolderId,
-          folderPath: documentType.folderPath,
           fields: consolidated.consolidatedFields,
         });
       }

@@ -51,8 +51,6 @@ export class DocumentTypesService {
       description: createDto.description,
       fieldSchema: { fields: createDto.fields },
       userId: user.id,
-      googleDriveFolderId: null,
-      folderPath: null,
     });
 
     await this.documentTypeRepository.save(documentType);
@@ -63,8 +61,6 @@ export class DocumentTypesService {
       name: documentType.name,
       description: documentType.description,
       fieldSchema: documentType.fieldSchema,
-      googleDriveFolderId: documentType.googleDriveFolderId,
-      folderPath: documentType.folderPath,
       createdAt: documentType.createdAt,
       updatedAt: documentType.updatedAt,
     };
@@ -81,8 +77,6 @@ export class DocumentTypesService {
       name: dt.name,
       description: dt.description,
       fieldSchema: dt.fieldSchema,
-      folderPath: dt.folderPath,
-      googleDriveFolderId: dt.googleDriveFolderId,
       createdAt: dt.createdAt,
       updatedAt: dt.updatedAt,
     }));
@@ -102,8 +96,6 @@ export class DocumentTypesService {
       name: documentType.name,
       description: documentType.description,
       fieldSchema: documentType.fieldSchema,
-      folderPath: documentType.folderPath,
-      googleDriveFolderId: documentType.googleDriveFolderId,
       createdAt: documentType.createdAt,
       updatedAt: documentType.updatedAt,
     };
@@ -172,12 +164,6 @@ export class DocumentTypesService {
       );
     }
 
-    if (documentType.googleDriveFolderId) {
-      warnings.push(
-        `⚠️ La carpeta en Google Drive (y sus archivos) NO será eliminada por seguridad. Puedes eliminarla manualmente si lo deseas.`,
-      );
-    }
-
     this.logger.warn(
       `Eliminando tipo de documento: ${documentType.name} (ID: ${documentType.id})`,
     );
@@ -188,11 +174,6 @@ export class DocumentTypesService {
       );
     }
 
-    if (documentType.googleDriveFolderId) {
-      this.logger.warn(
-        `La carpeta de Google Drive (${documentType.googleDriveFolderId}) no será eliminada.`,
-      );
-    }
 
     await this.documentTypeRepository.remove(documentType);
     this.documentProcessingService.invalidateTypesCache();
@@ -201,8 +182,6 @@ export class DocumentTypesService {
       message: `Tipo de documento "${documentType.name}" eliminado exitosamente.`,
       deletedDocumentsCount: documentCount,
       warnings: warnings.length > 0 ? warnings : undefined,
-      googleDriveFolderId: documentType.googleDriveFolderId,
-      folderPath: documentType.folderPath,
     };
   }
 }
