@@ -464,8 +464,6 @@ export class DocumentProcessingService {
             },
           ],
         },
-        googleDriveFolderId: null,
-        folderPath: null,
       });
 
       await queryRunner.manager.save(othersType);
@@ -663,8 +661,6 @@ export class DocumentProcessingService {
           filename: item.file.originalname,
           storageKey: item.storageKey,
           storageProvider: 'r2',
-          googleDriveLink: viewUrl,
-          googleDriveFileId: null,
           ocrRawText: item.ocrText,
           extractedData: null,
           inferredData: inferredData || {
@@ -863,8 +859,6 @@ If no merges needed, return {"merges":[]}. JSON only.`;
           filename: item.file.originalname,
           storageKey: item.storageKey,
           storageProvider: 'r2',
-          googleDriveLink: viewUrl,
-          googleDriveFileId: null,
           ocrRawText: item.ocrText,
           extractedData: null,
           inferredData,
@@ -893,7 +887,7 @@ If no merges needed, return {"merges":[]}. JSON only.`;
     user: User,
     typeName?: string,
     typeId?: number,
-  ): Promise<{ success: boolean; message: string; document?: any; documentType?: any }> {
+  ): Promise<{ success: boolean; lowConfidence?: boolean; message: string; document?: any; documentType?: any }> {
     const document = await this.documentRepository.findOne({
       where: { id: documentId, userId: user.id },
     });
@@ -1013,8 +1007,6 @@ If no merges needed, return {"merges":[]}. JSON only.`;
         name: finalTypeName,
         description: document.inferredData?.summary || `Tipo "${finalTypeName}" creado desde batch`,
         fieldSchema: { fields },
-        googleDriveFolderId: null,
-        folderPath: null,
       });
       await this.documentTypeRepository.save(documentType);
       this.invalidateTypesCache();
