@@ -36,7 +36,7 @@ export class EmailService {
 
     try {
       await this.resend.emails.send({
-        from: 'ONAI OCR <noreply@onai.cl>',
+        from: 'ONAI OCR <noreply@moti.cl>',
         to: email,
         subject: `Tu código de verificación: ${code}`,
         html,

@@ -1,6 +1,5 @@
 import axios from 'axios';
 
-// Use relative URL so requests go to the same origin (proxied by Next.js rewrites)
 const API_URL = '/api';
 
 export interface InferredField {
@@ -31,103 +30,23 @@ export interface InferFromSamplesResponse {
   totalTypesCreated: number;
 }
 
-export interface ProgressEvent {
-  step: string;
-  progress_pct: number;
-  message: string;
-}
-
-export interface JobStatusResponse {
-  jobId: string;
-  status: 'processing' | 'completed' | 'failed';
-  step: string;
-  progress: number;
-  message: string;
-  results?: InferFromSamplesResponse;
-  error?: string;
-}
-
-const POLL_INTERVAL_MS = 2000;
-
 class DocumentTypeInferenceService {
   /**
-   * Starts the inference job and returns the jobId.
-   */
-  private async startJob(
-    files: File[],
-    uploadSamples: boolean,
-  ): Promise<string> {
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
-      throw new Error('No hay token de autenticación');
-    }
-
-    const formData = new FormData();
-    files.forEach((file) => {
-      formData.append('files', file);
-    });
-
-    const response = await axios.post<{ jobId: string; status: string }>(
-      `${API_URL}/document-types/infer-from-samples?uploadSamples=${uploadSamples}`,
-      formData,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 60000, // 60s is plenty — the POST returns immediately now
-      },
-    );
-
-    return response.data.jobId;
-  }
-
-  /**
-   * Polls job status.
-   */
-  private async getJobStatus(jobId: string): Promise<JobStatusResponse> {
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
-      throw new Error('No hay token de autenticación');
-    }
-
-    const response = await axios.get<JobStatusResponse>(
-      `${API_URL}/document-types/jobs/${jobId}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        timeout: 10000,
-      },
-    );
-
-    return response.data;
-  }
-
-  /**
-   * Infiere tipos de documento desde archivos de ejemplo.
-   * POST → get jobId → poll GET every 2s → return results.
+   * Infiere tipos de documento desde archivos de ejemplo
+   * @param files - Array de archivos (2-10)
+   * @param uploadSamples - Si se deben subir los archivos de ejemplo a Drive
+   * @returns Tipos creados
    */
   async inferFromSamples(
     files: File[],
-    uploadSamples: boolean = false,
+    uploadSamples: boolean = false
   ): Promise<InferFromSamplesResponse> {
-    return this.inferFromSamplesWithProgress(files, uploadSamples);
-  }
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+      throw new Error('No hay token de autenticación');
+    }
 
-  /**
-   * Infiere tipos con progreso en tiempo real via polling.
-   *
-   * @param files - Array of files (2-10)
-   * @param uploadSamples - Whether to upload sample files
-   * @param onProgress - Callback for progress updates
-   * @returns Final response with created types
-   */
-  async inferFromSamplesWithProgress(
-    files: File[],
-    uploadSamples: boolean = false,
-    onProgress?: (event: ProgressEvent) => void,
-  ): Promise<InferFromSamplesResponse> {
+    // Validaciones
     if (!files || files.length < 2) {
       throw new Error('Se requieren al menos 2 archivos');
     }
@@ -136,51 +55,28 @@ class DocumentTypeInferenceService {
       throw new Error('Máximo 10 archivos permitidos');
     }
 
-    // Step 1: Start the job
-    const jobId = await this.startJob(files, uploadSamples);
-
-    // Step 2: Poll for status
-    return new Promise<InferFromSamplesResponse>((resolve, reject) => {
-      const poll = async () => {
-        try {
-          const status = await this.getJobStatus(jobId);
-
-          // Report progress
-          if (onProgress) {
-            onProgress({
-              step: status.step,
-              progress_pct: status.progress,
-              message: status.message,
-            });
-          }
-
-          if (status.status === 'completed' && status.results) {
-            resolve(status.results);
-            return;
-          }
-
-          if (status.status === 'failed') {
-            reject(new Error(status.error || 'Error en el procesamiento'));
-            return;
-          }
-
-          // Still processing — poll again
-          setTimeout(poll, POLL_INTERVAL_MS);
-        } catch (error: any) {
-          // Network errors during polling — retry a few times
-          if (error.code === 'ECONNABORTED' || error.response?.status >= 500) {
-            console.warn('Poll error, retrying...', error.message);
-            setTimeout(poll, POLL_INTERVAL_MS * 2);
-            return;
-          }
-          reject(error);
-        }
-      };
-
-      // Start polling after a short delay (give backend time to start)
-      setTimeout(poll, 1000);
+    // Crear FormData
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append('files', file);
     });
+
+    // Hacer la solicitud
+    const response = await axios.post<InferFromSamplesResponse>(
+      `${API_URL}/document-types/infer-from-samples?uploadSamples=${uploadSamples}`,
+      formData,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: 900000, // 15 minutos (margen extra para 10 documentos con homologación)
+      }
+    );
+
+    return response.data;
   }
 }
 
 export const documentTypeInferenceService = new DocumentTypeInferenceService();
+

@@ -154,8 +154,12 @@ export const documentsService = {
    * Obtiene todos los documentos del usuario
    */
   async getAll(): Promise<Document[]> {
-    const response = await apiClient.get<Document[]>('/documents');
-    return response.data;
+    const response = await apiClient.get<any>('/documents');
+    // Backend may return paginated { items, total, ... } or plain array
+    const data = response.data;
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.items)) return data.items;
+    return [];
   },
 
   /**

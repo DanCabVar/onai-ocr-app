@@ -1,6 +1,5 @@
 import axios from 'axios';
 
-// Use relative URL so requests go to the same origin (proxied by Next.js rewrites)
 const API_URL = '/api';
 
 export const apiClient = axios.create({
