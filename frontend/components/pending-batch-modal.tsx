@@ -119,117 +119,218 @@ export function PendingBatchModal({
         {activeTab === "pending" && (
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
 
-            {/* Zona superior: tipos inferidos (izq) + documentos con selector (der) */}
-            <div className="flex border-b shrink-0" style={{ height: '42%' }}>
-
-              {/* Izq: tipos inferidos — clic para ver esquema abajo */}
-              <div className="w-80 shrink-0 border-r flex flex-col min-h-0">
-                <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 shrink-0">
-                  Tipos identificados — clic para ver esquema
-                </div>
-                <ScrollArea className="flex-1">
-                  <div className="divide-y">
-                    {inferredTypes.length > 0 ? inferredTypes.map(type => (
-                      <button key={type.name} onClick={() => setSelectedType(type)}
-                        className={cn("w-full px-4 py-3 text-left flex items-center gap-2 hover:bg-accent transition-colors",
-                          selectedType?.name === type.name && "bg-primary/10 border-l-2 border-l-primary")}>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{type.name}</p>
-                          <p className="text-xs text-muted-foreground">{type.schema.length} campos · {type.docCount} doc(s)</p>
-                        </div>
-                        <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-                          selectedType?.name === type.name && "rotate-90 text-primary")} />
-                      </button>
-                    )) : (
-                      <div className="px-4 py-6 text-sm text-muted-foreground text-center">
-                        No se inferieron tipos nuevos
-                      </div>
-                    )}
+            {/* ── DESKTOP: side-by-side ── */}
+            <div className="hidden md:flex flex-1 overflow-hidden flex-col min-h-0">
+              <div className="flex border-b shrink-0" style={{ height: '42%' }}>
+                {/* Izq: tipos inferidos */}
+                <div className="w-80 shrink-0 border-r flex flex-col min-h-0">
+                  <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 shrink-0">
+                    Tipos identificados — clic para ver esquema
                   </div>
-                </ScrollArea>
-              </div>
-
-              {/* Der: documentos procesados con selector de tipo */}
-              <div className="flex-1 flex flex-col min-h-0">
-                <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 shrink-0">
-                  Documentos procesados — tipo identificado (editable)
+                  <ScrollArea className="flex-1">
+                    <div className="divide-y">
+                      {inferredTypes.length > 0 ? inferredTypes.map(type => (
+                        <button key={type.name} onClick={() => setSelectedType(type)}
+                          className={cn("w-full px-4 py-3 text-left flex items-center gap-2 hover:bg-accent transition-colors",
+                            selectedType?.name === type.name && "bg-primary/10 border-l-2 border-l-primary")}>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{type.name}</p>
+                            <p className="text-xs text-muted-foreground">{type.schema.length} campos · {type.docCount} doc(s)</p>
+                          </div>
+                          <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                            selectedType?.name === type.name && "rotate-90 text-primary")} />
+                        </button>
+                      )) : (
+                        <div className="px-4 py-6 text-sm text-muted-foreground text-center">No se inferieron tipos nuevos</div>
+                      )}
+                    </div>
+                  </ScrollArea>
                 </div>
-                <ScrollArea className="flex-1">
-                  <div className="divide-y">
-                    {pendingDocs.map(doc => (
-                      <div key={doc.documentId} className="px-4 py-3 flex items-center gap-3">
-                        <FileText className="h-4 w-4 text-amber-500 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{doc.filename}</p>
-                          {doc.confidence && (
-                            <p className="text-xs text-muted-foreground">Confianza: {Math.round(doc.confidence * 100)}%</p>
-                          )}
-                        </div>
-                        <select
-                          value={assignments[doc.documentId] ?? doc.suggestedType}
-                          onChange={e => setAssignments(prev => ({ ...prev, [doc.documentId]: e.target.value }))}
-                          className="text-sm border rounded-md px-2 py-1.5 bg-background min-w-[220px]"
-                        >
-                          <optgroup label="✨ Tipos nuevos inferidos">
-                            {allTypeOptions.filter(o => o.isNew).map(opt => (
-                              <option key={opt.name} value={opt.name}>{opt.name}</option>
-                            ))}
-                          </optgroup>
-                          {allTypeOptions.filter(o => !o.isNew).length > 0 && (
-                            <optgroup label="📁 Tipos existentes">
-                              {allTypeOptions.filter(o => !o.isNew).map(opt => (
+                {/* Der: docs con selector */}
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 shrink-0">
+                    Documentos procesados — tipo identificado (editable)
+                  </div>
+                  <ScrollArea className="flex-1">
+                    <div className="divide-y">
+                      {pendingDocs.map(doc => (
+                        <div key={doc.documentId} className="px-4 py-3 flex items-center gap-3">
+                          <FileText className="h-4 w-4 text-amber-500 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{doc.filename}</p>
+                            {doc.confidence && <p className="text-xs text-muted-foreground">Confianza: {Math.round(doc.confidence * 100)}%</p>}
+                          </div>
+                          <select
+                            value={assignments[doc.documentId] ?? doc.suggestedType}
+                            onChange={e => setAssignments(prev => ({ ...prev, [doc.documentId]: e.target.value }))}
+                            className="text-sm border rounded-md px-2 py-1.5 bg-background min-w-[220px]"
+                          >
+                            <optgroup label="✨ Tipos nuevos inferidos">
+                              {allTypeOptions.filter(o => o.isNew).map(opt => (
                                 <option key={opt.name} value={opt.name}>{opt.name}</option>
                               ))}
                             </optgroup>
-                          )}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
+                            {allTypeOptions.filter(o => !o.isNew).length > 0 && (
+                              <optgroup label="📁 Tipos existentes">
+                                {allTypeOptions.filter(o => !o.isNew).map(opt => (
+                                  <option key={opt.name} value={opt.name}>{opt.name}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              </div>
+              {/* Schema desktop */}
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 shrink-0">
+                  {selectedType ? `Esquema: ${selectedType.name}` : "Selecciona un tipo arriba para ver su esquema"}
+                </div>
+                <ScrollArea className="flex-1">
+                  {selectedSchema && selectedSchema.schema.length > 0 ? (
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-muted/60 z-10">
+                        <tr className="text-xs text-muted-foreground uppercase">
+                          <th className="text-left px-4 py-2 font-semibold">Campo</th>
+                          <th className="text-left px-4 py-2 font-semibold w-24">Tipo</th>
+                          <th className="text-left px-4 py-2 font-semibold w-16">Req.</th>
+                          <th className="text-left px-4 py-2 font-semibold">Descripción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {selectedSchema.schema.map((field, i) => (
+                          <tr key={i} className="hover:bg-muted/20">
+                            <td className="px-4 py-2">
+                              <p className="font-medium">{field.label || field.name}</p>
+                              {field.label && field.label !== field.name && (
+                                <p className="text-xs text-muted-foreground font-mono">({field.name})</p>
+                              )}
+                            </td>
+                            <td className="px-4 py-2"><Badge variant="outline" className="text-xs">{field.type}</Badge></td>
+                            <td className="px-4 py-2">
+                              {field.required ? <Badge variant="destructive" className="text-xs">Sí</Badge> : <Badge variant="secondary" className="text-xs">No</Badge>}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-muted-foreground max-w-xs">{field.description || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="p-8 text-center text-sm text-muted-foreground">
+                      {selectedType ? "Sin campos inferidos para este tipo" : "Selecciona un tipo de la lista para ver su esquema completo"}
+                    </div>
+                  )}
                 </ScrollArea>
               </div>
             </div>
 
-            {/* Zona inferior: tabla schema completa del tipo seleccionado */}
-            <div className="flex-1 flex flex-col min-h-0">
-              <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 shrink-0">
-                {selectedType ? `Esquema: ${selectedType.name}` : "Selecciona un tipo arriba para ver su esquema"}
+            {/* ── MOBILE: layout vertical ── */}
+            <div className="flex md:hidden flex-1 overflow-y-auto flex-col">
+
+              {/* 1. Documentos con selector */}
+              <div className="shrink-0">
+                <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 border-b">
+                  Documentos — asigna tipo
+                </div>
+                <div className="divide-y">
+                  {pendingDocs.map(doc => (
+                    <div key={doc.documentId} className="px-4 py-3">
+                      <div className="flex items-start gap-2 mb-2">
+                        <FileText className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium break-words">{doc.filename}</p>
+                          {doc.confidence && (
+                            <p className="text-xs text-muted-foreground">Confianza: {Math.round(doc.confidence * 100)}%</p>
+                          )}
+                        </div>
+                      </div>
+                      <select
+                        value={assignments[doc.documentId] ?? doc.suggestedType}
+                        onChange={e => setAssignments(prev => ({ ...prev, [doc.documentId]: e.target.value }))}
+                        className="w-full text-sm border rounded-md px-3 py-2 bg-background"
+                      >
+                        <optgroup label="✨ Tipos nuevos inferidos">
+                          {allTypeOptions.filter(o => o.isNew).map(opt => (
+                            <option key={opt.name} value={opt.name}>{opt.name}</option>
+                          ))}
+                        </optgroup>
+                        {allTypeOptions.filter(o => !o.isNew).length > 0 && (
+                          <optgroup label="📁 Tipos existentes">
+                            {allTypeOptions.filter(o => !o.isNew).map(opt => (
+                              <option key={opt.name} value={opt.name}>{opt.name}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <ScrollArea className="flex-1">
-                {selectedSchema && selectedSchema.schema.length > 0 ? (
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-muted/60 z-10">
-                      <tr className="text-xs text-muted-foreground uppercase">
-                        <th className="text-left px-4 py-2 font-semibold">Campo</th>
-                        <th className="text-left px-4 py-2 font-semibold w-24">Tipo</th>
-                        <th className="text-left px-4 py-2 font-semibold w-16">Req.</th>
-                        <th className="text-left px-4 py-2 font-semibold">Descripción</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {selectedSchema.schema.map((field, i) => (
-                        <tr key={i} className="hover:bg-muted/20">
-                          <td className="px-4 py-2">
-                            <p className="font-medium">{field.label || field.name}</p>
-                            {field.label && field.label !== field.name && (
-                              <p className="text-xs text-muted-foreground font-mono">({field.name})</p>
-                            )}
-                          </td>
-                          <td className="px-4 py-2"><Badge variant="outline" className="text-xs">{field.type}</Badge></td>
-                          <td className="px-4 py-2">
-                            {field.required ? <Badge variant="destructive" className="text-xs">Sí</Badge> : <Badge variant="secondary" className="text-xs">No</Badge>}
-                          </td>
-                          <td className="px-4 py-2 text-xs text-muted-foreground max-w-xs">{field.description || "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <div className="p-8 text-center text-sm text-muted-foreground">
-                    {selectedType ? "Sin campos inferidos para este tipo" : "Selecciona un tipo de la lista para ver su esquema completo"}
+
+              {/* 2. Tipos inferidos */}
+              {inferredTypes.length > 0 && (
+                <div className="shrink-0 border-t mt-2">
+                  <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 border-b">
+                    Tipos identificados — toca para ver campos
                   </div>
-                )}
-              </ScrollArea>
+                  <div className="divide-y">
+                    {inferredTypes.map(type => (
+                      <button
+                        key={type.name}
+                        onClick={() => setSelectedType(selectedType?.name === type.name ? null : type)}
+                        className={cn(
+                          "w-full px-4 py-3 text-left flex items-center gap-2 hover:bg-accent transition-colors",
+                          selectedType?.name === type.name && "bg-primary/10 border-l-2 border-l-primary"
+                        )}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium">{type.name}</p>
+                          <p className="text-xs text-muted-foreground">{type.schema.length} campos · {type.docCount} doc(s)</p>
+                        </div>
+                        <ChevronRight className={cn(
+                          "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                          selectedType?.name === type.name && "rotate-90 text-primary"
+                        )} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 3. Cards de campos del tipo seleccionado */}
+              {selectedSchema && selectedSchema.schema.length > 0 && (
+                <div className="shrink-0 border-t mt-2 pb-4">
+                  <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 border-b">
+                    Campos: {selectedSchema.name}
+                  </div>
+                  <div className="px-4 pt-3 flex flex-col gap-2">
+                    {selectedSchema.schema.map((field, i) => (
+                      <div key={i} className="rounded-lg border bg-card px-4 py-3">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <p className="text-sm font-semibold leading-tight">{field.label || field.name}</p>
+                          <div className="flex gap-1 shrink-0">
+                            <Badge variant="outline" className="text-xs">{field.type}</Badge>
+                            {field.required
+                              ? <Badge variant="destructive" className="text-xs">Req.</Badge>
+                              : <Badge variant="secondary" className="text-xs">Opc.</Badge>
+                            }
+                          </div>
+                        </div>
+                        {field.label && field.label !== field.name && (
+                          <p className="text-xs text-muted-foreground font-mono mb-1">({field.name})</p>
+                        )}
+                        {field.description && (
+                          <p className="text-xs text-muted-foreground">{field.description}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
             </div>
 
           </div>
