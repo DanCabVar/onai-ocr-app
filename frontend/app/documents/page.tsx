@@ -769,20 +769,16 @@ export default function DocumentsPage() {
                 <button
                   onClick={async () => {
                     try {
-                      const token = localStorage.getItem('auth_token');
+                      const token = localStorage.getItem("auth_token");
                       const res = await fetch(`/api/documents/${selectedDoc.id}/download-url`, {
                         headers: { Authorization: `Bearer ${token}` }
                       });
                       if (res.ok) {
                         const data = await res.json();
                         const downloadUrl = data.url || data.downloadUrl;
-                        if (downloadUrl) window.open(downloadUrl, '_blank');
-                      } else {
-                        alert('No se pudo obtener el enlace de descarga');
-                      }
-                    } catch (e) {
-                      alert('Error al descargar el documento');
-                    }
+                        if (downloadUrl) window.open(downloadUrl, "_blank");
+                      } else { alert("No se pudo obtener el enlace de descarga"); }
+                    } catch (e) { alert("Error al descargar el documento"); }
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
                 >
@@ -795,153 +791,130 @@ export default function DocumentsPage() {
 
           {selectedDoc && (
             <ScrollArea className="flex-1 pr-2">
-              <div className="md:grid md:grid-cols-[1fr_1fr] md:gap-6 space-y-6 md:space-y-0 pb-4">
-              <div className="space-y-6">{/* col izq */}
-                {/* Meta info */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Estado</p>
-                    {getStatusBadge(selectedDoc.status)}
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Tipo</p>
-                    <p className="text-sm font-medium break-words">{selectedDoc.documentTypeName || "Sin tipo"}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Confianza</p>
-                    <p className="text-sm font-medium font-mono">
-                      {selectedDoc.confidenceScore > 0
-                        ? `${(selectedDoc.confidenceScore * 100).toFixed(1)}%`
-                        : "—"}
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Fecha</p>
-                    <p className="text-sm font-medium">
-                      {new Date(selectedDoc.createdAt).toLocaleDateString("es-ES", {
-                        day: "2-digit",
-                        month: "long",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </p>
-                  </div>
-                </div>
+              {/* Layout 2 columnas en desktop */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4">
 
-                <Separator />
-                {/* Summary */}
-                {selectedDoc.extractedData?.summary && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Resumen</p>
-                    <p className="text-sm leading-relaxed bg-muted/50 rounded-lg p-3 break-words">
-                      {selectedDoc.extractedData.summary}
-                    </p>
-                  </div>
-                )}
-
-                {/* Extracted Fields */}
-                {(selectedDoc.extractedData?.fields || selectedDoc.extractedData?.key_fields) && (
-                  <div className="space-y-3">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Datos Extraídos</p>
-                    <div className="rounded-lg border divide-y">
-                      {(selectedDoc.extractedData.fields || selectedDoc.extractedData.key_fields || []).map(
-                        (field: DocumentField, index: number) => (
-                          <div key={index} className="flex flex-col sm:flex-row sm:items-start px-3 py-2 gap-1">
-                            <span className="text-xs font-semibold text-muted-foreground uppercase w-full sm:w-2/5 shrink-0">
-                              {field.label || field.name}{field.required && <span className="text-red-500 ml-1">*</span>}
-                            </span>
-                            <span className="text-sm break-words min-w-0">{renderFieldValue(field)}</span>
-                          </div>
-                        )
-                      )}
+                {/* COLUMNA IZQUIERDA */}
+                <div className="space-y-5">
+                  {/* Meta */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Estado</p>
+                      {getStatusBadge(selectedDoc.status)}
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Tipo</p>
+                      <p className="text-sm font-medium break-words">{selectedDoc.documentTypeName || "Sin tipo"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Confianza</p>
+                      <p className="text-sm font-medium font-mono">
+                        {selectedDoc.confidenceScore > 0 ? `${(selectedDoc.confidenceScore * 100).toFixed(1)}%` : "—"}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Fecha</p>
+                      <p className="text-sm font-medium">
+                        {new Date(selectedDoc.createdAt).toLocaleDateString("es-ES", {
+                          day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit"
+                        })}
+                      </p>
                     </div>
                   </div>
-                )}
 
-                {/* Inferred Data — solo mostrar si NO hay extractedData (docs sin tipo procesado) */}
-                {selectedDoc.inferredData && !selectedDoc.extractedData?.fields?.length && !selectedDoc.extractedData?.key_fields?.length && (
-                  <div className="space-y-3">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                      Datos Inferidos (tipo: {selectedDoc.inferredData.inferred_type})
-                    </p>
-                    <p className="text-sm leading-relaxed bg-muted/50 rounded-lg p-3">
-                      {selectedDoc.inferredData.summary}
-                    </p>
-                    {selectedDoc.inferredData.key_fields?.length > 0 && (
+                  <Separator />
+
+                  {/* Resumen */}
+                  {selectedDoc.extractedData?.summary && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Resumen</p>
+                      <p className="text-sm leading-relaxed bg-muted/50 rounded-lg p-3 break-words">
+                        {selectedDoc.extractedData.summary}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Datos Extraídos */}
+                  {(selectedDoc.extractedData?.fields?.length > 0 || selectedDoc.extractedData?.key_fields?.length > 0) && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Datos Extraídos</p>
                       <div className="rounded-lg border divide-y">
-                        {selectedDoc.inferredData.key_fields.map(
+                        {(selectedDoc.extractedData.fields || selectedDoc.extractedData.key_fields || []).map(
                           (field: DocumentField, index: number) => (
                             <div key={index} className="flex flex-col sm:flex-row sm:items-start px-3 py-2 gap-1">
                               <span className="text-xs font-semibold text-muted-foreground uppercase w-full sm:w-2/5 shrink-0">
-                                {field.label || field.name}
+                                {field.label || field.name}{field.required && <span className="text-red-500 ml-1">*</span>}
                               </span>
                               <span className="text-sm break-words min-w-0">{renderFieldValue(field)}</span>
                             </div>
                           )
                         )}
                       </div>
-                    )}
-                  </div>
-                )}
-
-                </div>{/* /col izq */}
-                <div className="space-y-6">{/* col der */}
-                {/* OCR Raw Text */}
-                {selectedDoc.ocrRawText && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Texto OCR</p>
-                    <pre className="text-xs bg-muted/50 rounded-lg p-3 whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono">
-                      {selectedDoc.ocrRawText}
-                    </pre>
-                  </div>
-                )}
-                </div>{/* /col der */}
-              </div>{/* /grid */}
-
-              {/* Actions */}
-              <div className="flex flex-wrap gap-2 pt-4 border-t">
-                  {selectedDoc.googleDriveLink && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                      onClick={() => window.open(selectedDoc.googleDriveLink, "_blank")}
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      Ver en Drive
-                    </Button>
+                    </div>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => handleDownload(selectedDoc)}
-                  >
-                    <Download className="h-4 w-4" />
-                    Descargar
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => handleReprocess(selectedDoc)}
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                    Re-procesar
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 text-red-500 hover:text-red-600"
-                    onClick={() => {
-                      handleDelete(selectedDoc)
-                      setDetailOpen(false)
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Eliminar
-                  </Button>
+
+                  {/* Datos Inferidos — SOLO si NO hay extractedData */}
+                  {selectedDoc.inferredData && !(selectedDoc.extractedData?.fields?.length > 0) && !(selectedDoc.extractedData?.key_fields?.length > 0) && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Datos Inferidos</p>
+                      {selectedDoc.inferredData.summary && (
+                        <p className="text-sm leading-relaxed bg-muted/50 rounded-lg p-3">
+                          {selectedDoc.inferredData.summary}
+                        </p>
+                      )}
+                      {selectedDoc.inferredData.key_fields?.length > 0 && (
+                        <div className="rounded-lg border divide-y">
+                          {selectedDoc.inferredData.key_fields.map(
+                            (field: DocumentField, index: number) => (
+                              <div key={index} className="flex flex-col sm:flex-row sm:items-start px-3 py-2 gap-1">
+                                <span className="text-xs font-semibold text-muted-foreground uppercase w-full sm:w-2/5 shrink-0">
+                                  {field.label || field.name}
+                                </span>
+                                <span className="text-sm break-words min-w-0">{renderFieldValue(field)}</span>
+                              </div>
+                            )
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* COLUMNA DERECHA — Texto OCR */}
+                <div className="space-y-5">
+                  {selectedDoc.ocrRawText && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Texto OCR</p>
+                      <pre className="text-xs bg-muted/50 rounded-lg p-3 whitespace-pre-wrap break-words max-h-[500px] overflow-y-auto font-mono">
+                        {selectedDoc.ocrRawText}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Acciones */}
+              <div className="flex flex-wrap gap-2 pt-4 border-t">
+                <Button variant="outline" size="sm" className="gap-2" onClick={() => handleDownload(selectedDoc)}>
+                  <Download className="h-4 w-4" />
+                  Descargar
+                </Button>
+                <Button
+                  variant="outline" size="sm" className="gap-2"
+                  onClick={() => selectedDoc.status === "pending_confirmation" ? openDecision(selectedDoc) : handleReprocess(selectedDoc)}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  {selectedDoc.status === "pending_confirmation" ? "Decidir" : "Re-procesar"}
+                </Button>
+                <Button
+                  variant="outline" size="sm" className="gap-2 text-red-500 hover:text-red-600"
+                  onClick={() => { handleDelete(selectedDoc); setDetailOpen(false) }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Eliminar
+                </Button>
+              </div>
             </ScrollArea>
           )}
         </DialogContent>
