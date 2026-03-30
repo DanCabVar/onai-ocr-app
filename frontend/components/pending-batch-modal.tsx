@@ -119,38 +119,40 @@ export function PendingBatchModal({
         {activeTab === "pending" && (
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
 
-            {/* Zona superior: tipos (izq) + docs (der) */}
-            <div className="flex border-b" style={{ height: '45%' }}>
+            {/* Zona superior: tipos inferidos (izq) + documentos con selector (der) */}
+            <div className="flex border-b shrink-0" style={{ height: '42%' }}>
 
-              {/* Izq: tipos inferidos */}
-              {inferredTypes.length > 0 && (
-                <div className="w-72 shrink-0 border-r flex flex-col min-h-0">
-                  <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 shrink-0">
-                    Tipos inferidos — clic para ver esquema
-                  </div>
-                  <ScrollArea className="flex-1">
-                    <div className="divide-y">
-                      {inferredTypes.map(type => (
-                        <button key={type.name} onClick={() => setSelectedType(type)}
-                          className={cn("w-full px-4 py-3 text-left flex items-center gap-2 hover:bg-accent transition-colors",
-                            selectedType?.name === type.name && "bg-primary/10 border-l-2 border-l-primary")}>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{type.name}</p>
-                            <p className="text-xs text-muted-foreground">{type.schema.length} campos · {type.docCount} doc(s)</p>
-                          </div>
-                          <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-                            selectedType?.name === type.name && "rotate-90 text-primary")} />
-                        </button>
-                      ))}
-                    </div>
-                  </ScrollArea>
+              {/* Izq: tipos inferidos — clic para ver esquema abajo */}
+              <div className="w-80 shrink-0 border-r flex flex-col min-h-0">
+                <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 shrink-0">
+                  Tipos identificados — clic para ver esquema
                 </div>
-              )}
+                <ScrollArea className="flex-1">
+                  <div className="divide-y">
+                    {inferredTypes.length > 0 ? inferredTypes.map(type => (
+                      <button key={type.name} onClick={() => setSelectedType(type)}
+                        className={cn("w-full px-4 py-3 text-left flex items-center gap-2 hover:bg-accent transition-colors",
+                          selectedType?.name === type.name && "bg-primary/10 border-l-2 border-l-primary")}>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{type.name}</p>
+                          <p className="text-xs text-muted-foreground">{type.schema.length} campos · {type.docCount} doc(s)</p>
+                        </div>
+                        <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                          selectedType?.name === type.name && "rotate-90 text-primary")} />
+                      </button>
+                    )) : (
+                      <div className="px-4 py-6 text-sm text-muted-foreground text-center">
+                        No se inferieron tipos nuevos
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
 
-              {/* Der: docs con selector de tipo */}
+              {/* Der: documentos procesados con selector de tipo */}
               <div className="flex-1 flex flex-col min-h-0">
                 <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 shrink-0">
-                  Documentos pendientes — selecciona tipo para cada uno
+                  Documentos procesados — tipo identificado (editable)
                 </div>
                 <ScrollArea className="flex-1">
                   <div className="divide-y">
@@ -168,11 +170,18 @@ export function PendingBatchModal({
                           onChange={e => setAssignments(prev => ({ ...prev, [doc.documentId]: e.target.value }))}
                           className="text-sm border rounded-md px-2 py-1.5 bg-background min-w-[220px]"
                         >
-                          {allTypeOptions.map(opt => (
-                            <option key={opt.name} value={opt.name}>
-                              {opt.isNew ? "✨ " : ""}{opt.name}
-                            </option>
-                          ))}
+                          <optgroup label="✨ Tipos nuevos inferidos">
+                            {allTypeOptions.filter(o => o.isNew).map(opt => (
+                              <option key={opt.name} value={opt.name}>{opt.name}</option>
+                            ))}
+                          </optgroup>
+                          {allTypeOptions.filter(o => !o.isNew).length > 0 && (
+                            <optgroup label="📁 Tipos existentes">
+                              {allTypeOptions.filter(o => !o.isNew).map(opt => (
+                                <option key={opt.name} value={opt.name}>{opt.name}</option>
+                              ))}
+                            </optgroup>
+                          )}
                         </select>
                       </div>
                     ))}
@@ -181,10 +190,10 @@ export function PendingBatchModal({
               </div>
             </div>
 
-            {/* Zona inferior: tabla schema */}
+            {/* Zona inferior: tabla schema completa del tipo seleccionado */}
             <div className="flex-1 flex flex-col min-h-0">
               <div className="px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 shrink-0">
-                {selectedType ? `Esquema inferido: ${selectedType.name}` : "Selecciona un tipo arriba para ver su esquema"}
+                {selectedType ? `Esquema: ${selectedType.name}` : "Selecciona un tipo arriba para ver su esquema"}
               </div>
               <ScrollArea className="flex-1">
                 {selectedSchema && selectedSchema.schema.length > 0 ? (
@@ -217,7 +226,7 @@ export function PendingBatchModal({
                   </table>
                 ) : (
                   <div className="p-8 text-center text-sm text-muted-foreground">
-                    {selectedType ? "Sin campos inferidos para este tipo" : "Selecciona un tipo arriba para ver su esquema"}
+                    {selectedType ? "Sin campos inferidos para este tipo" : "Selecciona un tipo de la lista para ver su esquema completo"}
                   </div>
                 )}
               </ScrollArea>

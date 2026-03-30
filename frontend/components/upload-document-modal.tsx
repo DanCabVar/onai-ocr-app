@@ -169,34 +169,18 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
     try {
       const files = fileItems.map(item => item.file)
 
-      // Simulate individual file status progression
-      const simulateProgress = () => {
-        let currentIndex = 0
-        const interval = setInterval(() => {
-          setFileItems(prev => {
-            const updated = [...prev]
-            // Progress simulation: cycle through states
-            if (currentIndex < updated.length) {
-              const stages: FileItemStatus[] = ["ocr", "classifying"]
-              const stageIndex = Math.floor((Date.now() / 1500) % stages.length)
-              updated[currentIndex] = { ...updated[currentIndex], status: stages[stageIndex] }
-              if (stageIndex === stages.length - 1 && currentIndex < updated.length - 1) {
-                currentIndex++
-              }
-            }
-            return updated
-          })
-        }, 1500)
-        return interval
-      }
-
-      const progressInterval = simulateProgress()
+      // Mostrar estado de espera real (OCR) mientras procesa el backend
+      setFileItems(prev => prev.map(item => ({ ...item, status: "ocr" as FileItemStatus })))
 
       const response = await documentsService.uploadBatch(files, (percent) => {
         setUploadPercent(percent)
+        // Al terminar de subir, pasar a classifying
+        if (percent >= 100) {
+          setFileItems(prev => prev.map(item =>
+            item.status === "ocr" ? { ...item, status: "classifying" as FileItemStatus } : item
+          ))
+        }
       })
-
-      clearInterval(progressInterval)
 
       // Backend may respond with async mode { processing: true, documentIds: [] }
       // or sync mode { results: [...] }
