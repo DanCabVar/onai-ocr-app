@@ -185,5 +185,12 @@ export class DocumentsController {
     if (!files || files.length === 0) throw new BadRequestException('No se recibieron archivos');
     return this.documentsService.uploadToInbox(files, user);
   }
-
+  @Post(':id/reprocess')
+  @UseGuards(JwtAuthGuard)
+  async reprocessDocument(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.documentsService.reprocessDocument(Number(id), user);
+  }
 }

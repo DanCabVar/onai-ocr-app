@@ -558,3 +558,39 @@ export class DocumentsService {
     })();
   }
 }
+
+  /**
+   * Re-process a document that failed or needs re-extraction.
+   */
+  async reprocessDocument(documentId: number, user: User) {
+    const document = await this.documentRepository.findOne({
+      where: { id: documentId, userId: user.id },
+    });
+
+    if (!document) {
+      throw new NotFoundException('Documento no encontrado');
+    }
+
+    if (!document.storageKey) {
+      throw new BadRequestException('El documento no tiene archivo en R2 para re-procesar');
+    }
+
+    // Mark as processing
+    await this.documentRepository.update(documentId, { status: 'processing' });
+
+    // Fire and forget
+    (async () => {
+      try {
+        const fileBuffer = await this.storageService.downloadFile(document.storageKey);
+        const mimeType = document.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
+        await this.documentProcessingService.processDocument(fileBuffer, document.filename, mimeType, user);
+        // Remove old record — processDocument creates a new one
+        await this.documentRepository.delete(documentId).catch(() => {});
+      } catch (e: any) {
+        this.logger.error(`Reprocess failed for doc ${documentId}: ${e.message}`);
+        await this.documentRepository.update(documentId, { status: 'error' }).catch(() => {});
+      }
+    })();
+
+    return { success: true, message: `"${document.filename}" está siendo re-procesado.` };
+  }

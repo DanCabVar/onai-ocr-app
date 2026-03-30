@@ -205,10 +205,23 @@ export default function DocumentsPage() {
   }
 
   const handleReprocess = async (doc: Document) => {
-    toast({
-      title: "Re-procesamiento",
-      description: `El documento "${doc.filename}" será re-procesado próximamente.`,
-    })
+    setActionLoading(doc.id)
+    try {
+      await documentsService.reprocess(doc.id)
+      toast({
+        title: "Re-procesando",
+        description: `"${doc.filename}" está siendo re-procesado en segundo plano.`,
+      })
+      await loadData()
+    } catch (err: any) {
+      toast({
+        title: "Error al re-procesar",
+        description: err?.response?.data?.message || err.message || "No se pudo re-procesar.",
+        variant: "destructive",
+      })
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   const handleDelete = async (doc: Document) => {

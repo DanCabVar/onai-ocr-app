@@ -194,6 +194,14 @@ export const documentsService = {
   },
 
   /**
+   * Re-procesa un documento con error o pendiente
+   */
+  async reprocess(id: number): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post(`/documents/${id}/reprocess`);
+    return response.data;
+  },
+
+  /**
    * Elimina un documento (DB + R2)
    */
   async delete(id: number): Promise<{ success: boolean; message: string }> {
