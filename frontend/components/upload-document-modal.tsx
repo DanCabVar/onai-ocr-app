@@ -377,7 +377,7 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
       onSuccess={() => { window.dispatchEvent(new CustomEvent("documentUploaded")); onUploadSuccess() }}
     />
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="w-full sm:max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="font-primary">
             {step === "select" && "Subir Documentos"}
