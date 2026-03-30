@@ -717,9 +717,7 @@ export default function DocumentsPage() {
 
           {selectedDoc && (
             <ScrollArea className="flex-1 pr-2">
-              <div className="md:grid md:grid-cols-2 md:gap-6 space-y-6 md:space-y-0 pb-4">
-                {/* Columna izquierda: meta + resumen + acciones */}
-                <div className="space-y-6">
+              <div className="md:columns-2 md:gap-6 space-y-6 pb-4 [&>*]:break-inside-avoid">
                 {/* Meta info */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
@@ -763,10 +761,6 @@ export default function DocumentsPage() {
                   </div>
                 )}
 
-                </div>{/* fin columna izquierda */}
-
-                {/* Columna derecha: datos extraídos */}
-                <div className="space-y-6">
                 {/* Extracted Fields */}
                 {(selectedDoc.extractedData?.fields || selectedDoc.extractedData?.key_fields) && (
                   <div className="space-y-3">
@@ -822,11 +816,8 @@ export default function DocumentsPage() {
                   </div>
                 )}
 
-                </div>{/* fin columna derecha */}
-              </div>{/* fin grid 2 columnas */}
-
                 {/* Actions */}
-                <div className="flex flex-wrap gap-2 pt-4 border-t">
+                <div className="flex flex-wrap gap-2 pt-2">
                   {selectedDoc.googleDriveLink && (
                     <Button
                       variant="outline"
