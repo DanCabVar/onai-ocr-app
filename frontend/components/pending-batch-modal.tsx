@@ -85,7 +85,7 @@ export function PendingBatchModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[96vw] max-w-[1400px] h-[92vh] flex flex-col gap-0 p-0 overflow-hidden" style={{ width: 'min(96vw, 1400px)' }}>
+      <DialogContent className="!w-[96vw] !max-w-[96vw] !h-[92vh] flex flex-col gap-0 p-0 overflow-hidden">
 
         {/* Header + tabs */}
         <div className="px-6 pt-5 pb-0 border-b shrink-0">
