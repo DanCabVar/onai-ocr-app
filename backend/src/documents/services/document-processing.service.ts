@@ -44,6 +44,7 @@ export interface BatchUploadResult {
   pendingConfirmation: number;
   errors: number;
   results: BatchDocResult[];
+  inferredTypes?: Array<{ name: string; schema: any[]; docCount: number }>;
 }
 
 /**

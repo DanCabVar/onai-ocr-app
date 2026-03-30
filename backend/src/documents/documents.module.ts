@@ -12,7 +12,6 @@ import { GeminiClassifierService } from '../ai-services/gemini-classifier.servic
 import { AuthModule } from '../auth/auth.module';
 import { AIServicesModule } from '../ai-services/ai-services.module';
 import { StorageModule } from '../storage/storage.module';
-import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -22,7 +21,6 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     AuthModule,
     AIServicesModule,
     StorageModule,
-    SubscriptionsModule,
   ],
   controllers: [DocumentsController],
   providers: [DocumentsService, DocumentProcessingService, GeminiClassifierService, SubscriptionsService],

@@ -13,6 +13,7 @@ import { Document } from '../database/entities/document.entity';
 import { User } from '../database/entities/user.entity';
 import { DocumentProcessingService } from './services/document-processing.service';
 import { StorageService } from '../storage/storage.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
 
 /**
@@ -613,8 +614,6 @@ export class DocumentsService {
     })();
   }
 
-}
-
   /**
    * Resolve pending_confirmation docs in batch.
    * Creates types if needed, extracts data, moves to tipos/ in R2.
@@ -687,3 +686,4 @@ export class DocumentsService {
 
     return { success: true, results, total: results.length, completed: results.filter(r => r.status === 'completed').length };
   }
+}
