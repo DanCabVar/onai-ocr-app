@@ -551,18 +551,35 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
                       {/* 3 opciones */}
                       <div className="flex flex-col gap-1.5">
                         {/* Opción 1: Crear nuevo tipo */}
-                        <button
-                          onClick={() => setPendingActions(prev => ({ ...prev, [docId]: { ...prev[docId], action: "confirm" } }))}
-                          className={cn(
-                            "flex items-center gap-2 px-3 py-2 rounded-md text-sm text-left border transition-colors",
-                            currentAction === "confirm"
-                              ? "border-primary bg-primary/10 text-primary font-medium"
-                              : "border-border hover:bg-accent"
+                        <div className={cn(
+                          "border rounded-md transition-colors",
+                          currentAction === "confirm" ? "border-primary bg-primary/10" : "border-border"
+                        )}>
+                          <button
+                            onClick={() => setPendingActions(prev => ({ ...prev, [docId]: { ...prev[docId], action: "confirm" } }))}
+                            className="flex items-center gap-2 px-3 py-2 text-sm text-left w-full"
+                          >
+                            <CheckCircle2 className={cn("h-3.5 w-3.5 flex-shrink-0", currentAction === "confirm" ? "text-primary" : "text-muted-foreground")} />
+                            <span className={cn("font-medium", currentAction === "confirm" && "text-primary")}>
+                              Crear nuevo tipo con IA
+                            </span>
+                          </button>
+                          {currentAction === "confirm" && (
+                            <div className="px-3 pb-2 space-y-1.5">
+                              <p className="text-xs text-muted-foreground">Nombre del tipo:</p>
+                              <input
+                                className="w-full text-xs border rounded px-2 py-1.5 bg-background"
+                                placeholder="ej: Factura, Contrato, Boleta..."
+                                value={action?.typeName || doc.suggestedType || ""}
+                                onChange={e => setPendingActions(prev => ({
+                                  ...prev,
+                                  [docId]: { ...prev[docId], action: "confirm", typeName: e.target.value }
+                                }))}
+                              />
+                              <p className="text-xs text-muted-foreground/70">La IA inferirá los campos desde el documento</p>
+                            </div>
                           )}
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0" />
-                          <span>Crear nuevo tipo "{action?.typeName || doc.suggestedType}"</span>
-                        </button>
+                        </div>
 
                         {/* Opción 2: Extraer con tipo existente */}
                         <div className={cn(
