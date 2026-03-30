@@ -21,6 +21,7 @@ import {
   FileSearch,
   CalendarDays,
   Upload,
+  Ban,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -71,6 +72,20 @@ function getStatusBadge(status: string) {
         <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 dark:bg-orange-900/30 px-2.5 py-0.5 text-xs font-medium text-orange-700 dark:text-orange-400">
           <Clock className="h-3 w-3 animate-spin" />
           En proceso
+        </span>
+      )
+    case "pending_confirmation":
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 dark:bg-amber-900/40 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-400 ring-1 ring-amber-400/50">
+          <AlertCircle className="h-3 w-3" />
+          Pendiente
+        </span>
+      )
+    case "queued":
+      return (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-400">
+          <Clock className="h-3 w-3" />
+          En cola
         </span>
       )
     case "error":
@@ -179,6 +194,7 @@ export default function DocumentsPage() {
     completed: documents.filter((d) => d.status === "completed").length,
     processing: documents.filter((d) => d.status === "processing").length,
     error: documents.filter((d) => d.status === "error").length,
+    pending: documents.filter((d) => d.status === "pending_confirmation").length,
   }), [documents])
 
   const openDetail = async (doc: Document) => {
@@ -221,6 +237,43 @@ export default function DocumentsPage() {
       })
     } finally {
       setActionLoading(null)
+    }
+  }
+
+  const openDecision = async (doc: Document) => {
+    setDecisionDoc(doc)
+    setDecisionAction("confirm")
+    setDecisionTypeName(doc.inferredData?.inferred_type || "")
+    setDecisionTypeId(undefined)
+    // Cargar tipos disponibles
+    try {
+      const types = await documentTypesService.getAll()
+      setAvailableTypes(types.map(t => ({ id: t.id, name: t.name })))
+    } catch { setAvailableTypes([]) }
+  }
+
+  const handleDecisionSubmit = async () => {
+    if (!decisionDoc) return
+    setSubmittingDecision(true)
+    try {
+      const apiAction = decisionAction === "confirm" ? "create_type" : decisionAction === "assign_type" ? "assign_type" : "cancel"
+      const response = await documentsService.confirmType(
+        decisionDoc.id,
+        apiAction as any,
+        decisionAction === "confirm" ? decisionTypeName : undefined,
+        decisionAction === "assign_type" ? decisionTypeId : undefined,
+      )
+      if (response.lowConfidence) {
+        toast({ title: "Asignado con baja confianza", description: "El documento fue asignado pero no se encontraron campos coincidentes con el esquema." })
+      } else {
+        toast({ title: "Documento procesado", description: response.message })
+      }
+      setDecisionDoc(null)
+      await loadData()
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.response?.data?.message || err.message, variant: "destructive" })
+    } finally {
+      setSubmittingDecision(false)
     }
   }
 
@@ -372,6 +425,21 @@ export default function DocumentsPage() {
               <p className="text-xs text-muted-foreground">Errores</p>
             </div>
           </button>
+          {stats.pending > 0 && (
+            <button
+              onClick={() => setStatusFilter("pending_confirmation")}
+              className={cn(
+                "flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ring-1 ring-amber-400/40",
+                statusFilter === "pending_confirmation" ? "border-amber-500 bg-amber-500/10" : "border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100/50"
+              )}
+            >
+              <AlertCircle className="h-5 w-5 text-amber-500" />
+              <div>
+                <p className="text-lg font-bold font-primary text-amber-600 dark:text-amber-400">{stats.pending}</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Pendientes</p>
+              </div>
+            </button>
+          )}
         </div>
 
         {/* Filters */}
@@ -514,8 +582,8 @@ export default function DocumentsPage() {
                           variant="outline"
                           size="sm"
                           className="h-8 w-8 p-0 flex-shrink-0"
-                          onClick={(e) => { e.stopPropagation(); handleReprocess(doc) }}
-                          title="Re-procesar"
+                          onClick={(e) => { e.stopPropagation(); doc.status === "pending_confirmation" ? openDecision(doc) : handleReprocess(doc) }}
+                          title={doc.status === "pending_confirmation" ? "Decidir qué hacer" : "Re-procesar"}
                         >
                           <RefreshCw className="h-3.5 w-3.5" />
                         </Button>
@@ -863,6 +931,102 @@ export default function DocumentsPage() {
               </div>
             </ScrollArea>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Decision Dialog — for pending_confirmation documents */}
+      <Dialog open={!!decisionDoc} onOpenChange={(o) => { if (!o) setDecisionDoc(null) }}>
+        <DialogContent className="w-[95vw] max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-primary flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-500" />
+              ¿Qué hacer con este documento?
+            </DialogTitle>
+            <DialogDescription className="truncate text-sm text-muted-foreground">
+              {decisionDoc?.filename}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            {/* Opción 1: Crear nuevo tipo */}
+            <button
+              onClick={() => setDecisionAction("confirm")}
+              className={cn(
+                "flex items-start gap-3 px-4 py-3 rounded-lg border w-full text-left transition-colors",
+                decisionAction === "confirm" ? "border-primary bg-primary/10" : "border-border hover:bg-accent"
+              )}
+            >
+              <CheckCircle2 className={cn("h-4 w-4 mt-0.5 shrink-0", decisionAction === "confirm" ? "text-primary" : "text-muted-foreground")} />
+              <div>
+                <p className="text-sm font-medium">Crear nuevo tipo de documento</p>
+                <p className="text-xs text-muted-foreground">La IA definirá el esquema basándose en este documento</p>
+                {decisionAction === "confirm" && (
+                  <input
+                    className="mt-2 w-full text-sm border rounded px-2 py-1 bg-background"
+                    placeholder="Nombre del tipo (ej: Factura, Contrato...)"
+                    value={decisionTypeName}
+                    onChange={e => setDecisionTypeName(e.target.value)}
+                  />
+                )}
+              </div>
+            </button>
+
+            {/* Opción 2: Asignar tipo existente */}
+            <button
+              onClick={() => setDecisionAction("assign_type")}
+              className={cn(
+                "flex items-start gap-3 px-4 py-3 rounded-lg border w-full text-left transition-colors",
+                decisionAction === "assign_type" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/20" : "border-border hover:bg-accent"
+              )}
+            >
+              <FileSearch className={cn("h-4 w-4 mt-0.5 shrink-0", decisionAction === "assign_type" ? "text-blue-500" : "text-muted-foreground")} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">Extraer con tipo existente</p>
+                <p className="text-xs text-muted-foreground">Elegir un esquema ya definido para extraer los campos</p>
+                {decisionAction === "assign_type" && (
+                  <select
+                    className="mt-2 w-full text-sm border rounded px-2 py-1 bg-background"
+                    value={decisionTypeId ?? ""}
+                    onChange={e => setDecisionTypeId(Number(e.target.value))}
+                  >
+                    <option value="">— Selecciona un tipo —</option>
+                    {availableTypes.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </button>
+
+            {/* Opción 3: Cancelar */}
+            <button
+              onClick={() => setDecisionAction("cancel")}
+              className={cn(
+                "flex items-center gap-3 px-4 py-3 rounded-lg border w-full text-left transition-colors",
+                decisionAction === "cancel" ? "border-destructive bg-destructive/10" : "border-border hover:bg-accent"
+              )}
+            >
+              <Ban className={cn("h-4 w-4 shrink-0", decisionAction === "cancel" ? "text-destructive" : "text-muted-foreground")} />
+              <div>
+                <p className="text-sm font-medium">Cancelar y eliminar</p>
+                <p className="text-xs text-muted-foreground">Eliminar el documento sin procesar</p>
+              </div>
+            </button>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setDecisionDoc(null)}>
+              Volver
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={handleDecisionSubmit}
+              disabled={submittingDecision || (decisionAction === "assign_type" && !decisionTypeId)}
+            >
+              {submittingDecision ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {decisionAction === "cancel" ? "Eliminar documento" : "Confirmar"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
