@@ -158,13 +158,19 @@ export default function DocumentsPage() {
     return () => window.removeEventListener("documentUploaded", handler)
   }, [loadData])
 
-  // Auto-refresh polling when there are queued/processing docs
+  // Auto-refresh polling — solo si hay docs activos, cada 8s, sin flash
   useEffect(() => {
     const hasInProgress = documents.some(d => d.status === 'queued' || d.status === 'processing')
     if (!hasInProgress) return
-    const interval = setInterval(() => loadData(), 5000)
+    const interval = setInterval(async () => {
+      // Fetch silencioso sin cambiar isLoading para evitar flash
+      try {
+        const [docs] = await Promise.all([documentsService.getAll()])
+        setDocuments(docs)
+      } catch { /* ignore */ }
+    }, 8000)
     return () => clearInterval(interval)
-  }, [documents, loadData])
+  }, [documents])
 
   // Filtered documents
   const filteredDocs = useMemo(() => {

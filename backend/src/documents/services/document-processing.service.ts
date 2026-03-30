@@ -307,20 +307,35 @@ export class DocumentProcessingService {
 
       // ─── PASO 7: Save to database ───
       const dbMetric = this.metrics.startStage(ctx, 'save-db');
-      const document = this.documentRepository.create({
-        userId: user.id,
-        documentTypeId: documentType.id,
-        filename: originalName,
-        storageKey: originalKey,
-        storageProvider: 'r2',
-        ocrRawText: ocrResult.text,
-        extractedData,
-        inferredData: (classification.isOthers ? inferredData : null) as any,
-        confidenceScore: classification.confidence,
-        status: 'completed',
-      });
-
-      await this.documentRepository.save(document);
+      let document: any;
+      if (existingDocId) {
+        // Update existing record (reprocess flow — no duplicates)
+        await this.documentRepository.update(existingDocId, {
+          documentTypeId: documentType.id,
+          storageKey: originalKey,
+          storageProvider: 'r2',
+          ocrRawText: ocrResult.text,
+          extractedData,
+          inferredData: (classification.isOthers ? inferredData : null) as any,
+          confidenceScore: classification.confidence,
+          status: 'completed',
+        });
+        document = await this.documentRepository.findOne({ where: { id: existingDocId } });
+      } else {
+        document = this.documentRepository.create({
+          userId: user.id,
+          documentTypeId: documentType.id,
+          filename: originalName,
+          storageKey: originalKey,
+          storageProvider: 'r2',
+          ocrRawText: ocrResult.text,
+          extractedData,
+          inferredData: (classification.isOthers ? inferredData : null) as any,
+          confidenceScore: classification.confidence,
+          status: 'completed',
+        });
+        await this.documentRepository.save(document);
+      }
       this.metrics.endStage(dbMetric);
 
       // ─── Finalize metrics ───

@@ -553,7 +553,7 @@ export class DocumentsService {
     try {
       const fileBuffer = await this.storageService.downloadFile(document.storageKey);
       const mimeType = document.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
-      const result = await this.documentProcessingService.processDocument(fileBuffer, document.filename, mimeType, user) as any;
+      const result = await this.documentProcessingService.processDocument(fileBuffer, document.filename, mimeType, user, documentId) as any;
 
       // If processDocument returned pending_confirmation (no types or no match)
       if (result?.pendingConfirmation) {
@@ -572,8 +572,6 @@ export class DocumentsService {
         };
       }
 
-      // Successful processing — remove old record (processDocument created new one)
-      await this.documentRepository.delete(documentId).catch(() => {});
       return { success: true, message: `"${document.filename}" re-procesado exitosamente.` };
     } catch (e: any) {
       this.logger.error(`Reprocess failed for doc ${documentId}: ${e.message}`);
