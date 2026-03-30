@@ -557,7 +557,6 @@ export class DocumentsService {
       }
     })();
   }
-}
 
   /**
    * Re-process a document that failed or needs re-extraction.
@@ -594,3 +593,4 @@ export class DocumentsService {
 
     return { success: true, message: `"${document.filename}" está siendo re-procesado.` };
   }
+}
