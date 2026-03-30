@@ -778,9 +778,9 @@ export default function DocumentsPage() {
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="!w-[96vw] !max-w-[96vw] md:!max-w-5xl max-h-[90vh] overflow-y-auto overflow-x-hidden" style={{ left: '50%', transform: 'translate(-50%, -50%)' }}>
           <DialogHeader>
-            <DialogTitle className="font-primary flex items-center gap-2">
-              <FileText className="h-5 w-5 shrink-0" />
-              <span className="break-words min-w-0">{selectedDoc?.filename || "Documento"}</span>
+            <DialogTitle className="font-primary flex items-start gap-2 flex-wrap">
+              <FileText className="h-5 w-5 shrink-0 mt-0.5" />
+              <span className="break-all min-w-0 flex-1 whitespace-normal leading-snug">{selectedDoc?.filename || "Documento"}</span>
             </DialogTitle>
             <DialogDescription>
               Detalle completo del documento procesado
