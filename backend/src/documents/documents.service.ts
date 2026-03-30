@@ -637,12 +637,30 @@ export class DocumentsService {
           : await this.documentTypeRepository.findOne({ where: { name: assignment.typeName, userId: user.id } });
 
         if (!documentType) {
-          // Create new type — schema will be inferred from the document
+          // Create new type — infer schema from the document if possible
+          let inferredFields: any[] = [];
+          try {
+            if (document.storageKey) {
+              const fileBuffer = await this.storageService.downloadFile(document.storageKey);
+              const mimeType = document.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
+              const inferResult = await this.geminiClassifierService.inferFieldsForUnclassifiedWithVision(fileBuffer, mimeType);
+              inferredFields = (inferResult.key_fields || []).map((f: any) => ({
+                name: f.name,
+                label: f.label || f.name,
+                type: f.type || 'string',
+                required: f.required ?? false,
+                description: f.description || '',
+              }));
+            }
+          } catch (e: any) {
+            this.logger.warn(`Schema inference failed for new type "${assignment.typeName}": ${e.message}`);
+          }
+
           documentType = this.documentTypeRepository.create({
             userId: user.id,
             name: assignment.typeName,
             description: `Tipo "${assignment.typeName}" creado desde procesamiento batch`,
-            fieldSchema: { fields: [] },
+            fieldSchema: { fields: inferredFields },
           });
           await this.documentTypeRepository.save(documentType);
           this.documentProcessingService.invalidateTypesCache();
