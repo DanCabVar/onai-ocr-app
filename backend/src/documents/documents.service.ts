@@ -550,21 +550,36 @@ export class DocumentsService {
     // Mark as processing
     await this.documentRepository.update(documentId, { status: 'processing' });
 
-    // Fire and forget
-    (async () => {
-      try {
-        const fileBuffer = await this.storageService.downloadFile(document.storageKey);
-        const mimeType = document.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
-        await this.documentProcessingService.processDocument(fileBuffer, document.filename, mimeType, user);
-        // Remove old record — processDocument creates a new one
-        await this.documentRepository.delete(documentId).catch(() => {});
-      } catch (e: any) {
-        this.logger.error(`Reprocess failed for doc ${documentId}: ${e.message}`);
-        await this.documentRepository.update(documentId, { status: 'error' }).catch(() => {});
-      }
-    })();
+    try {
+      const fileBuffer = await this.storageService.downloadFile(document.storageKey);
+      const mimeType = document.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
+      const result = await this.documentProcessingService.processDocument(fileBuffer, document.filename, mimeType, user) as any;
 
-    return { success: true, message: `"${document.filename}" está siendo re-procesado.` };
+      // If processDocument returned pending_confirmation (no types or no match)
+      if (result?.pendingConfirmation) {
+        // Update existing record instead of creating new one
+        await this.documentRepository.update(documentId, {
+          status: 'pending_confirmation',
+          inferredData: result.inferredData || { inferred_type: 'Sin tipo', summary: 'No se encontró un tipo coincidente.', key_fields: [] },
+        });
+        return {
+          success: false,
+          pendingConfirmation: true,
+          documentId,
+          filename: document.filename,
+          suggestedType: result.suggestedType || 'Sin tipo',
+          message: 'No se encontró un tipo coincidente. Define cómo procesar este documento.',
+        };
+      }
+
+      // Successful processing — remove old record (processDocument created new one)
+      await this.documentRepository.delete(documentId).catch(() => {});
+      return { success: true, message: `"${document.filename}" re-procesado exitosamente.` };
+    } catch (e: any) {
+      this.logger.error(`Reprocess failed for doc ${documentId}: ${e.message}`);
+      await this.documentRepository.update(documentId, { status: 'error' }).catch(() => {});
+      return { success: false, message: `Error al re-procesar: ${e.message}` };
+    }
   }
   /**
    * Process pre-created document records (avoids duplicates).

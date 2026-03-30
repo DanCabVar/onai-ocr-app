@@ -229,12 +229,16 @@ export default function DocumentsPage() {
   const handleReprocess = async (doc: Document) => {
     setActionLoading(doc.id)
     try {
-      await documentsService.reprocess(doc.id)
-      toast({
-        title: "Re-procesando",
-        description: `"${doc.filename}" está siendo re-procesado en segundo plano.`,
-      })
-      await loadData()
+      const response = await documentsService.reprocess(doc.id)
+      if ((response as any).pendingConfirmation) {
+        // No match found — open decision dialog
+        await loadData()
+        toast({ title: "Sin coincidencia", description: "No se encontró tipo. Define cómo procesar el documento." })
+        await openDecision({ ...doc, status: 'pending_confirmation' })
+      } else {
+        toast({ title: "Re-procesado", description: `"${doc.filename}" procesado correctamente.` })
+        await loadData()
+      }
     } catch (err: any) {
       toast({
         title: "Error al re-procesar",
@@ -791,7 +795,8 @@ export default function DocumentsPage() {
 
           {selectedDoc && (
             <ScrollArea className="flex-1 pr-2">
-              <div className="md:columns-2 md:gap-6 space-y-6 pb-4 [&>*]:break-inside-avoid">
+              <div className="md:grid md:grid-cols-[1fr_1fr] md:gap-6 space-y-6 md:space-y-0 pb-4">
+              <div className="space-y-6">{/* col izq */}
                 {/* Meta info */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
@@ -854,8 +859,8 @@ export default function DocumentsPage() {
                   </div>
                 )}
 
-                {/* Inferred Data (for "Otros" documents) */}
-                {selectedDoc.inferredData && (
+                {/* Inferred Data — solo mostrar si NO hay extractedData (docs sin tipo procesado) */}
+                {selectedDoc.inferredData && !selectedDoc.extractedData?.fields?.length && !selectedDoc.extractedData?.key_fields?.length && (
                   <div className="space-y-3">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
                       Datos Inferidos (tipo: {selectedDoc.inferredData.inferred_type})
@@ -880,15 +885,19 @@ export default function DocumentsPage() {
                   </div>
                 )}
 
+                </div>{/* /col izq */}
+                <div className="space-y-6">{/* col der */}
                 {/* OCR Raw Text */}
                 {selectedDoc.ocrRawText && (
                   <div className="space-y-2">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Texto OCR</p>
-                    <pre className="text-xs bg-muted/50 rounded-lg p-3 whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto font-mono">
+                    <pre className="text-xs bg-muted/50 rounded-lg p-3 whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono">
                       {selectedDoc.ocrRawText}
                     </pre>
                   </div>
                 )}
+                </div>{/* /col der */}
+              </div>{/* /grid */}
 
                 {/* Actions */}
                 <div className="flex flex-wrap gap-2 pt-2">
