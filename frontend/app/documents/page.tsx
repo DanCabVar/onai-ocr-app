@@ -776,7 +776,7 @@ export default function DocumentsPage() {
 
       {/* Document Detail Modal */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="w-[95vw] max-w-2xl md:max-w-5xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
+        <DialogContent className="!w-[96vw] !max-w-[96vw] md:!max-w-5xl max-h-[90vh] overflow-y-auto overflow-x-hidden" style={{ left: '50%', transform: 'translate(-50%, -50%)' }}>
           <DialogHeader>
             <DialogTitle className="font-primary flex items-center gap-2">
               <FileText className="h-5 w-5 shrink-0" />
@@ -859,7 +859,7 @@ export default function DocumentsPage() {
                   {selectedDoc.ocrRawText && (
                     <div className="space-y-2">
                       <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Texto OCR</p>
-                      <pre className="text-xs bg-muted/50 rounded-lg p-3 whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono">
+                      <pre className="text-xs bg-muted/50 rounded-lg p-3 whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto overflow-x-hidden font-mono w-full">
                         {selectedDoc.ocrRawText}
                       </pre>
                     </div>
