@@ -297,13 +297,15 @@ export default function DocumentTypesPage() {
                     {selectedType.fieldSchema.fields.length > 0 ? (
                       <div className="divide-y">
                         {selectedType.fieldSchema.fields.map((field, index) => (
-                          <div key={index} className="px-4 py-3 space-y-1.5">
-                            {/* Fila 1: nombre + tipo + requerido */}
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-mono text-sm font-semibold">{field.label || field.name}</span>
-                              {field.label && field.label !== field.name && (
-                                <span className="text-xs text-muted-foreground font-mono">({field.name})</span>
-                              )}
+                          <div key={index} className="px-4 py-3 space-y-1">
+                            {/* Línea 1: Título legible */}
+                            <p className="text-sm font-semibold font-primary leading-tight">{field.label || field.name}</p>
+                            {/* Línea 2: nombre técnico entre paréntesis */}
+                            {field.label && field.label !== field.name && (
+                              <p className="text-xs text-muted-foreground font-mono">({field.name})</p>
+                            )}
+                            {/* Línea 3: tipo + requerido/opcional */}
+                            <div className="flex items-center gap-2">
                               <Badge variant="outline" className="text-xs">{field.type}</Badge>
                               {field.required ? (
                                 <Badge variant="destructive" className="text-xs">Requerido</Badge>
@@ -311,7 +313,7 @@ export default function DocumentTypesPage() {
                                 <Badge variant="secondary" className="text-xs">Opcional</Badge>
                               )}
                             </div>
-                            {/* Fila 2: descripción */}
+                            {/* Línea 4: descripción */}
                             {field.description && (
                               <p className="text-xs text-muted-foreground leading-relaxed">{field.description}</p>
                             )}
