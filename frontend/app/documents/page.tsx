@@ -776,7 +776,7 @@ export default function DocumentsPage() {
 
       {/* Document Detail Modal */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="!w-[96vw] !max-w-[96vw] md:!max-w-5xl max-h-[90vh] overflow-y-auto overflow-x-hidden" style={{ left: '50%', transform: 'translate(-50%, -50%)' }}>
+        <DialogContent className="!w-[96vw] !max-w-[96vw] md:!max-w-5xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="font-primary flex items-start gap-2 flex-wrap">
               <FileText className="h-5 w-5 shrink-0 mt-0.5" />
@@ -811,9 +811,9 @@ export default function DocumentsPage() {
           </DialogHeader>
 
           {selectedDoc && (
-            <ScrollArea className="flex-1 pr-2">
+            <ScrollArea className="flex-1 pr-2 overflow-x-hidden">
               {/* Layout 2 columnas en desktop */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4 overflow-x-hidden min-w-0">
 
                 {/* COLUMNA IZQUIERDA: Meta + Resumen + OCR */}
                 <div className="space-y-5">
