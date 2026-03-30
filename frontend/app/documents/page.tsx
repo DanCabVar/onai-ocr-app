@@ -794,7 +794,7 @@ export default function DocumentsPage() {
               {/* Layout 2 columnas en desktop */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4">
 
-                {/* COLUMNA IZQUIERDA */}
+                {/* COLUMNA IZQUIERDA: Meta + Resumen + OCR */}
                 <div className="space-y-5">
                   {/* Meta */}
                   <div className="grid grid-cols-2 gap-3">
@@ -834,6 +834,19 @@ export default function DocumentsPage() {
                     </div>
                   )}
 
+                  {/* Texto OCR */}
+                  {selectedDoc.ocrRawText && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Texto OCR</p>
+                      <pre className="text-xs bg-muted/50 rounded-lg p-3 whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono">
+                        {selectedDoc.ocrRawText}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+
+                {/* COLUMNA DERECHA: Datos Extraídos */}
+                <div className="space-y-5">
                   {/* Datos Extraídos */}
                   {(selectedDoc.extractedData?.fields?.length > 0 || selectedDoc.extractedData?.key_fields?.length > 0) && (
                     <div className="space-y-3">
@@ -853,7 +866,7 @@ export default function DocumentsPage() {
                     </div>
                   )}
 
-                  {/* Datos Inferidos — SOLO si NO hay extractedData */}
+                  {/* Datos Inferidos — solo si NO hay extractedData */}
                   {selectedDoc.inferredData && !(selectedDoc.extractedData?.fields?.length > 0) && !(selectedDoc.extractedData?.key_fields?.length > 0) && (
                     <div className="space-y-3">
                       <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Datos Inferidos</p>
@@ -880,22 +893,10 @@ export default function DocumentsPage() {
                   )}
                 </div>
 
-                {/* COLUMNA DERECHA — Texto OCR */}
-                <div className="space-y-5">
-                  {selectedDoc.ocrRawText && (
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Texto OCR</p>
-                      <pre className="text-xs bg-muted/50 rounded-lg p-3 whitespace-pre-wrap break-words max-h-[500px] overflow-y-auto font-mono">
-                        {selectedDoc.ocrRawText}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-
               </div>
 
-              {/* Acciones */}
-              <div className="flex flex-wrap gap-2 pt-4 border-t">
+                            {/* Acciones */}
+              <div className="flex flex-wrap gap-2 pt-4 border-t justify-end">
                 <Button variant="outline" size="sm" className="gap-2" onClick={() => handleDownload(selectedDoc)}>
                   <Download className="h-4 w-4" />
                   Descargar
