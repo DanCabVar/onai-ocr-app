@@ -17,6 +17,7 @@ import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/hooks/use-toast"
 import { documentsService, BatchDocumentResult } from "@/lib/api/documents.service"
 import { documentTypesService } from "@/lib/api/document-types.service"
+import { PendingBatchModal } from "@/components/pending-batch-modal"
 import { cn } from "@/lib/utils"
 
 interface UploadDocumentModalProps {
@@ -61,6 +62,10 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
   const [availableTypes, setAvailableTypes] = useState<{ id: number; name: string }[]>([])
   const [completedResults, setCompletedResults] = useState<BatchDocumentResult[]>([])
   const [backgroundMode, setBackgroundMode] = useState(false)
+  const [pendingBatchOpen, setPendingBatchOpen] = useState(false)
+  const [pendingBatchTypes, setPendingBatchTypes] = useState<any[]>([])
+  const [pendingBatchDocs, setPendingBatchDocs] = useState<any[]>([])
+  const [allExistingTypes, setAllExistingTypes] = useState<{id:number;name:string}[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
@@ -225,7 +230,25 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
 
       // Check if there are pending confirmations
       const pending = results.filter(r => r.status === "pending_confirmation")
-      if (pending.length > 0) {
+      const inferredTypes = (response as any).inferredTypes ?? []
+
+      if (pending.length > 0 && inferredTypes.length > 0) {
+        // Nuevo flujo: modal rico con tipos inferidos
+        setPendingBatchTypes(inferredTypes)
+        setPendingBatchDocs(pending.map(p => ({
+          documentId: p.documentId!,
+          filename: p.filename,
+          suggestedType: p.suggestedType ?? "Desconocido",
+          confidence: p.confidence,
+        })))
+        documentTypesService.getAll().then(types => {
+          setAllExistingTypes(types.map(t => ({ id: t.id, name: t.name })))
+        }).catch(() => {})
+        setStep("results")  // cerrar el upload modal
+        onOpenChange(false)
+        setTimeout(() => setPendingBatchOpen(true), 200)
+      } else if (pending.length > 0) {
+        // Fallback: flujo antiguo si no hay tipos inferidos
         setPendingDocs(pending)
         const actions: Record<number, { action: "confirm" | "assign_type" | "cancel"; typeName?: string; typeId?: number }> = {}
         pending.forEach(doc => {
@@ -234,7 +257,6 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
           }
         })
         setPendingActions(actions)
-        // Cargar tipos disponibles para opción assign_type
         documentTypesService.getAll().then(types => {
           setAvailableTypes(types.map(t => ({ id: t.id, name: t.name })))
         }).catch(() => {})
@@ -363,6 +385,15 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
   }
 
   return (
+    <>
+    <PendingBatchModal
+      open={pendingBatchOpen}
+      onOpenChange={setPendingBatchOpen}
+      inferredTypes={pendingBatchTypes}
+      pendingDocs={pendingBatchDocs}
+      existingTypes={allExistingTypes}
+      onSuccess={() => { window.dispatchEvent(new CustomEvent("documentUploaded")); onUploadSuccess() }}
+    />
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
@@ -761,5 +792,6 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
         </div>
       </DialogContent>
     </Dialog>
+  </>
   )
 }
