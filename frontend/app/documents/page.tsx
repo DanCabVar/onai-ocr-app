@@ -899,8 +899,8 @@ export default function DocumentsPage() {
                 </div>{/* /col der */}
               </div>{/* /grid */}
 
-                {/* Actions */}
-                <div className="flex flex-wrap gap-2 pt-2">
+              {/* Actions */}
+              <div className="flex flex-wrap gap-2 pt-4 border-t">
                   {selectedDoc.googleDriveLink && (
                     <Button
                       variant="outline"
@@ -942,8 +942,6 @@ export default function DocumentsPage() {
                     <Trash2 className="h-4 w-4" />
                     Eliminar
                   </Button>
-                </div>
-              </div>
             </ScrollArea>
           )}
         </DialogContent>
