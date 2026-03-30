@@ -229,8 +229,15 @@ export default function DocumentsPage() {
       if (!res.ok) throw new Error("No se pudo obtener el enlace")
       const data = await res.json()
       const url = data.url || data.downloadUrl
-      if (url) window.open(url, "_blank")
-      else throw new Error("Enlace vacío")
+      if (!url) throw new Error("Enlace vacío")
+      // Descargar directamente usando <a download>
+      const a = document.createElement("a")
+      a.href = url
+      a.download = doc.filename
+      a.target = "_blank"  // fallback si el navegador bloquea
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
     } catch (e: any) {
       toast({
         title: "Error al descargar",
@@ -917,10 +924,13 @@ export default function DocumentsPage() {
                 </Button>
                 <Button
                   variant="outline" size="sm" className="gap-2"
+                  disabled={actionLoading === selectedDoc.id}
                   onClick={() => selectedDoc.status === "pending_confirmation" ? openDecision(selectedDoc) : handleReprocess(selectedDoc)}
                 >
-                  <RefreshCw className="h-4 w-4" />
-                  {selectedDoc.status === "pending_confirmation" ? "Decidir" : "Re-procesar"}
+                  {actionLoading === selectedDoc.id
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <RefreshCw className="h-4 w-4" />}
+                  {selectedDoc.status === "pending_confirmation" ? "Decidir" : actionLoading === selectedDoc.id ? "Procesando..." : "Re-procesar"}
                 </Button>
                 <Button
                   variant="outline" size="sm" className="gap-2 text-red-500 hover:text-red-600"

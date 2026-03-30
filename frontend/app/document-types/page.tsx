@@ -295,31 +295,51 @@ export default function DocumentTypesPage() {
                   </div>
                   <div className="overflow-auto flex-1">
                     {selectedType.fieldSchema.fields.length > 0 ? (
-                      <div className="divide-y">
-                        {selectedType.fieldSchema.fields.map((field, index) => (
-                          <div key={index} className="px-4 py-3 space-y-1">
-                            {/* Línea 1: Título legible */}
-                            <p className="text-sm font-semibold font-primary leading-tight">{field.label || field.name}</p>
-                            {/* Línea 2: nombre técnico entre paréntesis */}
-                            {field.label && field.label !== field.name && (
-                              <p className="text-xs text-muted-foreground font-mono">({field.name})</p>
-                            )}
-                            {/* Línea 3: tipo + requerido/opcional */}
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="text-xs">{field.type}</Badge>
-                              {field.required ? (
-                                <Badge variant="destructive" className="text-xs">Requerido</Badge>
-                              ) : (
-                                <Badge variant="secondary" className="text-xs">Opcional</Badge>
+                      <>
+                        {/* Desktop: tabla */}
+                        <div className="hidden md:block">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="px-4">Campo</TableHead>
+                                <TableHead className="px-4">Etiqueta</TableHead>
+                                <TableHead className="w-[110px] px-4">Tipo</TableHead>
+                                <TableHead className="w-[90px] text-center px-4">Req.</TableHead>
+                                <TableHead className="px-4">Descripción</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {selectedType.fieldSchema.fields.map((field, index) => (
+                                <TableRow key={index}>
+                                  <TableCell className="font-mono text-sm py-2 px-4">{field.name}</TableCell>
+                                  <TableCell className="font-medium py-2 px-4">{field.label}</TableCell>
+                                  <TableCell className="py-2 px-4"><Badge variant="outline">{field.type}</Badge></TableCell>
+                                  <TableCell className="text-center py-2 px-4">
+                                    {field.required ? <Badge variant="destructive">Sí</Badge> : <Badge variant="secondary">No</Badge>}
+                                  </TableCell>
+                                  <TableCell className="text-muted-foreground text-sm py-2 px-4 max-w-[280px]">{field.description || "—"}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                        {/* Mobile: cards */}
+                        <div className="md:hidden divide-y">
+                          {selectedType.fieldSchema.fields.map((field, index) => (
+                            <div key={index} className="px-4 py-3 space-y-1">
+                              <p className="text-sm font-semibold font-primary leading-tight">{field.label || field.name}</p>
+                              {field.label && field.label !== field.name && (
+                                <p className="text-xs text-muted-foreground font-mono">({field.name})</p>
                               )}
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-xs">{field.type}</Badge>
+                                {field.required ? <Badge variant="destructive" className="text-xs">Requerido</Badge> : <Badge variant="secondary" className="text-xs">Opcional</Badge>}
+                              </div>
+                              {field.description && <p className="text-xs text-muted-foreground leading-relaxed">{field.description}</p>}
                             </div>
-                            {/* Línea 4: descripción */}
-                            {field.description && (
-                              <p className="text-xs text-muted-foreground leading-relaxed">{field.description}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      </>
                     ) : (
                       <div className="p-8 text-center text-muted-foreground font-secondary">
                         Este tipo de documento no tiene campos definidos.
