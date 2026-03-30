@@ -200,6 +200,12 @@ export class DocumentsController {
     @CurrentUser() user: User,
   ) {
     if (!body.assignments?.length) throw new BadRequestException('Se requiere assignments');
-    return this.documentsService.resolvePendingBatch(body.assignments, user);
+    // Process async to avoid Cloudflare 524 timeout on large batches
+    const total = body.assignments.length;
+    this.documentsService.resolvePendingBatch(body.assignments, user).catch(err => {
+      // Log error but don't crash — client already got 202
+      console.error('[resolve-pending-batch] background error:', err?.message);
+    });
+    return { success: true, processing: true, total, message: `Procesando ${total} documento(s) en segundo plano.` };
   }
 }

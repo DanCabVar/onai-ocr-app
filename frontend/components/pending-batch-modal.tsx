@@ -71,7 +71,11 @@ export function PendingBatchModal({
         return { documentId: Number(docId), typeName, typeId: existing?.id }
       })
       const response = await documentsService.resolvePendingBatch(assignmentList)
-      toast({ title: "¡Procesado!", description: `${response.completed} de ${response.total} documentos clasificados correctamente.` })
+      if (response.processing) {
+        toast({ title: "Procesando en segundo plano", description: `${response.total} documento(s) se están clasificando. Revisa la sección Documentos en unos momentos.` })
+      } else {
+        toast({ title: "¡Procesado!", description: `${response.completed} de ${response.total} documentos clasificados correctamente.` })
+      }
       onSuccess()
       onOpenChange(false)
     } catch (err: any) {
