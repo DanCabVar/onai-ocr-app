@@ -146,9 +146,9 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
       try {
         const files = fileItems.map(item => item.file)
         const response = await documentsService.uploadToInbox(files, (percent) => setUploadPercent(percent))
-        setFileItems(prev => prev.map(item => ({ ...item, status: "completed" as FileItemStatus })))
+        setFileItems(prev => prev.map(item => ({ ...item, status: "uploading" as FileItemStatus })))
         setStep("results")
-        toast({ title: "En cola", description: `${files.length} archivo(s) subidos. Se procesarán en segundo plano.` })
+        toast({ title: "En cola", description: `${files.length} archivo(s) en procesamiento. Revisa la sección Documentos.` })
         window.dispatchEvent(new CustomEvent("documentUploaded", { detail: response }))
       } catch (error: any) {
         setFileItems(prev => prev.map(item => ({ ...item, status: "error" as FileItemStatus, error: error.message })))

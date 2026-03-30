@@ -766,30 +766,17 @@ export default function DocumentsPage() {
                 {(selectedDoc.extractedData?.fields || selectedDoc.extractedData?.key_fields) && (
                   <div className="space-y-3">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Datos Extraídos</p>
-                    <div className="rounded-lg border overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-[40%]">Campo</TableHead>
-                            <TableHead>Valor</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {(selectedDoc.extractedData.fields || selectedDoc.extractedData.key_fields || []).map(
-                            (field: DocumentField, index: number) => (
-                              <TableRow key={index}>
-                                <TableCell className="font-medium text-sm">
-                                  {field.label || field.name}
-                                  {field.required && (
-                                    <span className="text-red-500 ml-1">*</span>
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-sm break-all">{renderFieldValue(field)}</TableCell>
-                              </TableRow>
-                            )
-                          )}
-                        </TableBody>
-                      </Table>
+                    <div className="rounded-lg border divide-y">
+                      {(selectedDoc.extractedData.fields || selectedDoc.extractedData.key_fields || []).map(
+                        (field: DocumentField, index: number) => (
+                          <div key={index} className="flex flex-col sm:flex-row sm:items-start px-3 py-2 gap-1">
+                            <span className="text-xs font-semibold text-muted-foreground uppercase w-full sm:w-2/5 shrink-0">
+                              {field.label || field.name}{field.required && <span className="text-red-500 ml-1">*</span>}
+                            </span>
+                            <span className="text-sm break-words min-w-0">{renderFieldValue(field)}</span>
+                          </div>
+                        )
+                      )}
                     </div>
                   </div>
                 )}
@@ -810,21 +797,16 @@ export default function DocumentsPage() {
                             <TableRow>
                               <TableHead className="w-[40%]">Campo</TableHead>
                               <TableHead>Valor</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
                             {selectedDoc.inferredData.key_fields.map(
                               (field: DocumentField, index: number) => (
-                                <TableRow key={index}>
-                                  <TableCell className="font-medium text-sm">
+                                <div key={index} className="flex flex-col sm:flex-row sm:items-start px-3 py-2 gap-1">
+                                  <span className="text-xs font-semibold text-muted-foreground uppercase w-full sm:w-2/5 shrink-0">
                                     {field.label || field.name}
-                                  </TableCell>
-                                  <TableCell className="text-sm break-all">{renderFieldValue(field)}</TableCell>
-                                </TableRow>
+                                  </span>
+                                  <span className="text-sm break-words min-w-0">{renderFieldValue(field)}</span>
+                                </div>
                               )
                             )}
-                          </TableBody>
-                        </Table>
                       </div>
                     )}
                   </div>

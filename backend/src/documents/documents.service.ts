@@ -408,8 +408,8 @@ export class DocumentsService {
       documentIds.push(document.id);
     }
 
-    // Fire-and-forget: process full batch in background
-    this.processBatchInBackground(files, user);
+    // Fire-and-forget: process each pre-created document (no duplicates)
+    this.processExistingDocsInBackground(documentIds, files, user);
 
     return {
       success: true,
@@ -593,4 +593,35 @@ export class DocumentsService {
 
     return { success: true, message: `"${document.filename}" está siendo re-procesado.` };
   }
+  /**
+   * Process pre-created document records (avoids duplicates).
+   * Each file already has a DB record + R2 upload — just run the pipeline.
+   */
+  private processExistingDocsInBackground(
+    documentIds: number[],
+    files: Express.Multer.File[],
+    user: User,
+  ): void {
+    (async () => {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const docId = documentIds[i];
+        if (!file || !docId) continue;
+        try {
+          // Download from R2 and process
+          const key = this.storageService.buildKey(user.id, 'originals', file.originalname);
+          const fileBuffer = await this.storageService.downloadFile(key).catch(() => file.buffer);
+          const mimeType = file.mimetype || (file.originalname.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+          
+          // Process — this creates a NEW record, so delete the placeholder first
+          await this.documentRepository.delete(docId).catch(() => {});
+          await this.documentProcessingService.processDocument(fileBuffer, file.originalname, mimeType, user);
+        } catch (e: any) {
+          this.logger.error(`Background process failed for doc ${docId}: ${e.message}`);
+          await this.documentRepository.update(docId, { status: 'error' }).catch(() => {});
+        }
+      }
+    })();
+  }
+
 }
