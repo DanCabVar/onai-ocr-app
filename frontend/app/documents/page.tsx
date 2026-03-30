@@ -677,7 +677,7 @@ export default function DocumentsPage() {
 
       {/* Document Detail Modal */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="w-[95vw] max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-2xl md:max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-primary flex items-center gap-2">
               <FileText className="h-5 w-5 shrink-0" />
@@ -716,10 +716,12 @@ export default function DocumentsPage() {
           </DialogHeader>
 
           {selectedDoc && (
-            <ScrollArea className="flex-1 pr-4">
-              <div className="space-y-6 pb-4">
+            <ScrollArea className="flex-1 pr-2">
+              <div className="md:grid md:grid-cols-2 md:gap-6 space-y-6 md:space-y-0 pb-4">
+                {/* Columna izquierda: meta + resumen + acciones */}
+                <div className="space-y-6">
                 {/* Meta info */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Estado</p>
                     {getStatusBadge(selectedDoc.status)}
@@ -751,7 +753,6 @@ export default function DocumentsPage() {
                 </div>
 
                 <Separator />
-
                 {/* Summary */}
                 {selectedDoc.extractedData?.summary && (
                   <div className="space-y-2">
@@ -762,6 +763,10 @@ export default function DocumentsPage() {
                   </div>
                 )}
 
+                </div>{/* fin columna izquierda */}
+
+                {/* Columna derecha: datos extraídos */}
+                <div className="space-y-6">
                 {/* Extracted Fields */}
                 {(selectedDoc.extractedData?.fields || selectedDoc.extractedData?.key_fields) && (
                   <div className="space-y-3">
@@ -817,8 +822,11 @@ export default function DocumentsPage() {
                   </div>
                 )}
 
+                </div>{/* fin columna derecha */}
+              </div>{/* fin grid 2 columnas */}
+
                 {/* Actions */}
-                <div className="flex flex-wrap gap-2 pt-2">
+                <div className="flex flex-wrap gap-2 pt-4 border-t">
                   {selectedDoc.googleDriveLink && (
                     <Button
                       variant="outline"
