@@ -214,13 +214,21 @@ export default function DocumentsPage() {
     setDetailOpen(true)
   }
 
-  const handleDownload = (doc: Document) => {
-    if (doc.googleDriveLink) {
-      window.open(doc.googleDriveLink, "_blank")
-    } else {
+  const handleDownload = async (doc: Document) => {
+    try {
+      const token = localStorage.getItem("auth_token")
+      const res = await fetch(`/api/documents/${doc.id}/download-url`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error("No se pudo obtener el enlace")
+      const data = await res.json()
+      const url = data.url || data.downloadUrl
+      if (url) window.open(url, "_blank")
+      else throw new Error("Enlace vacío")
+    } catch (e: any) {
       toast({
-        title: "Sin enlace",
-        description: "Este documento no tiene enlace de descarga disponible",
+        title: "Error al descargar",
+        description: e.message || "No se pudo obtener el enlace de descarga",
         variant: "destructive",
       })
     }
