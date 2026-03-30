@@ -226,7 +226,7 @@ export function DocumentTypeModal({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="w-[60vw]! max-w-[60vw]! max-h-[90vh] overflow-y-auto">
+      <DialogContent className="!w-[96vw] !max-w-[96vw] sm:!w-[70vw] sm:!max-w-[70vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {documentType ? "Editar Tipo de Documento" : "Nuevo Tipo de Documento"}
@@ -238,7 +238,7 @@ export function DocumentTypeModal({
 
         <div className="space-y-6 py-4">
           {/* Nombre y Descripción */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="name">Nombre del tipo *</Label>
               <Input
@@ -301,54 +301,85 @@ export function DocumentTypeModal({
                 </p>
               </div>
             ) : (
-              <div className="border rounded-md overflow-auto max-h-[500px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[280px] px-4">Nombre Campo *</TableHead>
-                      <TableHead className="w-[280px] px-4">Etiqueta *</TableHead>
-                      <TableHead className="w-[180px] px-4">Tipo *</TableHead>
-                      <TableHead className="w-[140px] text-center px-4">Requerido</TableHead>
-                      <TableHead className="w-[600px] px-4">Descripción (máx. 300 caracteres)</TableHead>
-                      <TableHead className="w-[80px] px-4"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {fields.map((field, index) => (
-                      <TableRow
-                        key={index}
-                        onPaste={(e) => handlePaste(e, index)}
-                      >
-                        <TableCell className="w-[280px] py-3 px-4">
-                          <Input
-                            placeholder="numero_factura"
-                            value={field.name}
-                            onChange={(e) =>
-                              updateField(index, { name: e.target.value })
-                            }
-                            className="h-8 w-full border-2"
-                          />
-                        </TableCell>
-                        <TableCell className="w-[280px] py-3 px-4">
-                          <Input
-                            placeholder="Número de Factura"
-                            value={field.label}
-                            onChange={(e) =>
-                              updateField(index, { label: e.target.value })
-                            }
-                            className="h-8 w-full border-2"
-                          />
-                        </TableCell>
-                        <TableCell className="w-[180px] py-3 px-4">
-                          <Select
-                            value={field.type}
-                            onValueChange={(value: any) =>
-                              updateField(index, { type: value })
-                            }
-                          >
-                            <SelectTrigger className="h-8 w-full border-2">
-                              <SelectValue />
-                            </SelectTrigger>
+              <>
+                {/* Desktop: tabla con scroll horizontal */}
+                <div className="hidden sm:block border rounded-md overflow-auto max-h-[500px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[280px] px-4">Nombre Campo *</TableHead>
+                        <TableHead className="w-[280px] px-4">Etiqueta *</TableHead>
+                        <TableHead className="w-[180px] px-4">Tipo *</TableHead>
+                        <TableHead className="w-[140px] text-center px-4">Requerido</TableHead>
+                        <TableHead className="w-[600px] px-4">Descripción (máx. 300 caracteres)</TableHead>
+                        <TableHead className="w-[80px] px-4"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {fields.map((field, index) => (
+                        <TableRow key={index} onPaste={(e) => handlePaste(e, index)}>
+                          <TableCell className="w-[280px] py-3 px-4">
+                            <Input placeholder="numero_factura" value={field.name} onChange={(e) => updateField(index, { name: e.target.value })} className="h-8 w-full border-2" />
+                          </TableCell>
+                          <TableCell className="w-[280px] py-3 px-4">
+                            <Input placeholder="Número de Factura" value={field.label} onChange={(e) => updateField(index, { label: e.target.value })} className="h-8 w-full border-2" />
+                          </TableCell>
+                          <TableCell className="w-[180px] py-3 px-4">
+                            <Select value={field.type} onValueChange={(value: any) => updateField(index, { type: value })}>
+                              <SelectTrigger className="h-8 w-full border-2"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="string">Texto</SelectItem>
+                                <SelectItem value="number">Número</SelectItem>
+                                <SelectItem value="date">Fecha</SelectItem>
+                                <SelectItem value="boolean">Booleano</SelectItem>
+                                <SelectItem value="array">Lista</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell className="w-[140px] py-3 px-4">
+                            <div className="flex items-center justify-center">
+                              <Checkbox checked={field.required} onCheckedChange={(checked) => updateField(index, { required: checked === true })} className="size-5 border-2 data-[state=checked]:bg-primary data-[state=checked]:border-primary" />
+                            </div>
+                          </TableCell>
+                          <TableCell className="w-[600px] py-3 px-4">
+                            <Input placeholder="Descripción opcional" value={field.description || ""} onChange={(e) => updateField(index, { description: e.target.value.slice(0, 300) })} maxLength={300} className="h-8 w-full border-2" />
+                          </TableCell>
+                          <TableCell className="py-3 px-4">
+                            <Button type="button" variant="ghost" size="icon" onClick={() => removeField(index)} className="h-8 w-8">
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Mobile: cards por campo */}
+                <div className="flex sm:hidden flex-col gap-3">
+                  {fields.map((field, index) => (
+                    <div key={index} className="border rounded-lg p-3 space-y-2" onPaste={(e) => handlePaste(e, index)}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-muted-foreground uppercase">Campo {index + 1}</span>
+                        <Button type="button" variant="ghost" size="icon" onClick={() => removeField(index)} className="h-7 w-7">
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-xs text-muted-foreground">Nombre *</label>
+                          <Input placeholder="numero_factura" value={field.name} onChange={(e) => updateField(index, { name: e.target.value })} className="h-8 border-2 text-sm" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs text-muted-foreground">Etiqueta *</label>
+                          <Input placeholder="Nº Factura" value={field.label} onChange={(e) => updateField(index, { label: e.target.value })} className="h-8 border-2 text-sm" />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 space-y-1">
+                          <label className="text-xs text-muted-foreground">Tipo *</label>
+                          <Select value={field.type} onValueChange={(value: any) => updateField(index, { type: value })}>
+                            <SelectTrigger className="h-8 border-2 text-sm"><SelectValue /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="string">Texto</SelectItem>
                               <SelectItem value="number">Número</SelectItem>
@@ -357,45 +388,20 @@ export function DocumentTypeModal({
                               <SelectItem value="array">Lista</SelectItem>
                             </SelectContent>
                           </Select>
-                        </TableCell>
-                        <TableCell className="w-[140px] py-3 px-4">
-                          <div className="flex items-center justify-center">
-                            <Checkbox
-                              checked={field.required}
-                              onCheckedChange={(checked) =>
-                                updateField(index, { required: checked === true })
-                              }
-                              className="size-5 border-2 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-                            />
-                          </div>
-                        </TableCell>
-                        <TableCell className="w-[600px] py-3 px-4">
-                          <Input
-                            placeholder="Descripción opcional"
-                            value={field.description || ""}
-                            onChange={(e) =>
-                              updateField(index, { description: e.target.value.slice(0, 300) })
-                            }
-                            maxLength={300}
-                            className="h-8 w-full border-2"
-                          />
-                        </TableCell>
-                        <TableCell className="py-3 px-4">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeField(index)}
-                            className="h-8 w-8"
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                        </div>
+                        <div className="space-y-1 flex flex-col items-center">
+                          <label className="text-xs text-muted-foreground">Req.</label>
+                          <Checkbox checked={field.required} onCheckedChange={(checked) => updateField(index, { required: checked === true })} className="size-5 border-2 data-[state=checked]:bg-primary data-[state=checked]:border-primary mt-1" />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Descripción</label>
+                        <Input placeholder="Descripción opcional" value={field.description || ""} onChange={(e) => updateField(index, { description: e.target.value.slice(0, 300) })} maxLength={300} className="h-8 border-2 text-sm" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </div>
