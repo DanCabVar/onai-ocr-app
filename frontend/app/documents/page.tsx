@@ -344,7 +344,7 @@ export default function DocumentsPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] overflow-y-auto">
+    <div className="h-[calc(100vh-4rem)] overflow-y-auto overflow-x-hidden">
       <div className="p-4 sm:p-6 space-y-6 max-w-[1400px] mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between">
