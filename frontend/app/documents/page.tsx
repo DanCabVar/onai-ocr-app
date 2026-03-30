@@ -114,6 +114,12 @@ export default function DocumentsPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
   const [isUnauthenticated, setIsUnauthenticated] = useState(false)
+  const [availableTypes, setAvailableTypes] = useState<{ id: number; name: string }[]>([])
+  const [decisionDoc, setDecisionDoc] = useState<Document | null>(null)
+  const [decisionAction, setDecisionAction] = useState<"confirm" | "assign_type" | "cancel">("confirm")
+  const [decisionTypeId, setDecisionTypeId] = useState<number | undefined>()
+  const [decisionTypeName, setDecisionTypeName] = useState("")
+  const [submittingDecision, setSubmittingDecision] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
