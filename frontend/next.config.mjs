@@ -16,6 +16,10 @@ const nextConfig = {
       },
     ];
   },
+  // Extended timeout for long-running API calls (OCR batch processing)
+  experimental: {
+    proxyTimeout: 180000, // 3 minutes
+  },
   // Environment variables available at build time
   env: {
     NEXT_PUBLIC_LANDING_URL: process.env.NEXT_PUBLIC_LANDING_URL || 'https://ocr.moti.cl',
