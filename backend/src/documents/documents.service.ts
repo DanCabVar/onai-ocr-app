@@ -389,35 +389,8 @@ export class DocumentsService {
    */
   async uploadBatch(files: Express.Multer.File[], user: User) {
     this.logger.log(`📦 Batch upload: ${files.length} archivos para usuario ${user.id}`);
-
-    // ─── Async batch: upload all to R2, create DB records, process in background ───
-    const documentIds: number[] = [];
-
-    for (const file of files) {
-      const originalKey = this.storageService.buildKey(user.id, 'originals', file.originalname);
-      await this.storageService.uploadFile(file.buffer, originalKey, file.mimetype);
-
-      const document = this.documentRepository.create({
-        userId: user.id,
-        filename: file.originalname,
-        storageKey: originalKey,
-        storageProvider: 'r2',
-        status: 'processing',
-      });
-      await this.documentRepository.save(document);
-      documentIds.push(document.id);
-    }
-
-    // Fire-and-forget: process each pre-created document (no duplicates)
-    this.processExistingDocsInBackground(documentIds, files, user);
-
-    return {
-      success: true,
-      message: `${files.length} documentos recibidos. Procesando en segundo plano.`,
-      total: files.length,
-      documentIds,
-      processing: true,
-    };
+    // Use processBatch which handles classification, pending_confirmation, etc.
+    return this.documentProcessingService.processBatch(files, user);
   }
 
   /**

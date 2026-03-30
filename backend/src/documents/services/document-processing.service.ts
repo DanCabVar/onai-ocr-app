@@ -210,9 +210,25 @@ export class DocumentProcessingService {
       // Load available types (may already be loaded in parallel above)
       const availableTypes = await this.getAvailableTypes(user.id);
       if (availableTypes.length === 0) {
-        throw new BadRequestException(
-          'No hay tipos de documento configurados. Crea al menos un tipo antes de subir documentos.',
-        );
+        // No types defined — save as pending_confirmation so user can define a type
+        const document = this.documentRepository.create({
+          userId: user.id,
+          filename: originalName,
+          storageKey: originalKey,
+          storageProvider: 'r2',
+          ocrRawText: ocrResult?.text || null,
+          status: 'pending_confirmation',
+          inferredData: { inferred_type: 'Sin tipo', summary: 'No hay tipos de documento definidos. Define un tipo para extraer los campos.', key_fields: [] },
+        });
+        await this.documentRepository.save(document);
+        return {
+          success: false,
+          pendingConfirmation: true,
+          documentId: document.id,
+          filename: originalName,
+          suggestedType: 'Sin tipo',
+          message: 'No hay tipos definidos. Define un tipo para procesar este documento.',
+        } as any;
       }
 
       // ─── PASO 4+5: Unified classify + extract in a SINGLE Vision call ───
