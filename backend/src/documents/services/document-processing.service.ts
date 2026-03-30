@@ -44,6 +44,7 @@ export interface BatchUploadResult {
   pendingConfirmation: number;
   errors: number;
   results: BatchDocResult[];
+  inferredTypes?: Array<{ name: string; schema: any[]; docCount: number }>;
 }
 
 /**
@@ -690,43 +691,10 @@ export class DocumentProcessingService {
       }
     }
 
-    // ─── PASO 5a: If 5+ docs, apply grouping/homogenization for unmatched ───
-    if (unmatched.length >= 5) {
-      await this.homogenizeAndGroupBatch(unmatched, batchResults, user);
-    } else {
-      // Return unmatched as pending_confirmation
-      for (const item of unmatched) {
-        const c = item.classification.classification;
-        const inferredData = item.classification.inferredData;
-
-        // Save doc with status pending_confirmation
-        const viewUrl = await this.storageService.getPresignedUrl(item.storageKey, 7 * 24 * 3600);
-        const document = this.documentRepository.create({
-          userId: user.id,
-          documentTypeId: null,
-          filename: item.file.originalname,
-          storageKey: item.storageKey,
-          storageProvider: 'r2',
-          ocrRawText: item.ocrText,
-          extractedData: null,
-          inferredData: inferredData || {
-            inferred_type: c.inferredType || 'Desconocido',
-            summary: 'Pendiente de confirmación',
-            key_fields: [],
-          },
-          confidenceScore: c.confidence,
-          status: 'pending_confirmation',
-        });
-        await this.documentRepository.save(document);
-
-        batchResults.push({
-          filename: item.file.originalname,
-          status: 'pending_confirmation',
-          documentId: document.id,
-          suggestedType: c.inferredType || inferredData?.inferred_type || 'Desconocido',
-          confidence: c.confidence,
-        });
-      }
+    // ─── PASO 5a: Homologar y agrupar TODOS los unmatched (sin mínimo) ───
+    let inferredTypes: Array<{ name: string; schema: any[]; docCount: number }> = [];
+    if (unmatched.length > 0) {
+      inferredTypes = await this.homogenizeAndGroupBatch(unmatched, batchResults, user);
     }
 
     // ─── PASO 6: Process matched docs (extract + save, max 3 parallel) ───
@@ -806,6 +774,7 @@ export class DocumentProcessingService {
       pendingConfirmation: pending,
       errors,
       results: batchResults,
+      inferredTypes,  // tipos homologados para docs sin match
     };
   }
 
@@ -822,7 +791,8 @@ export class DocumentProcessingService {
     }>,
     batchResults: BatchDocResult[],
     user: User,
-  ): Promise<void> {
+  ): Promise<Array<{ name: string; schema: any[]; docCount: number }>> {
+    const inferredTypesResult: Array<{ name: string; schema: any[]; docCount: number }> = [];
     // Group by inferred type
     const typeGroups = new Map<string, typeof items>();
     for (const item of items) {
@@ -921,7 +891,16 @@ If no merges needed, return {"merges":[]}. JSON only.`;
           confidence: item.classification.classification.confidence,
         });
       }
+      // Recopilar schema inferido del grupo
+      const groupSchema = groupItems[0]?.classification?.extraction?.fields || 
+                          groupItems[0]?.classification?.inferredData?.key_fields || [];
+      inferredTypesResult.push({
+        name: typeName,
+        schema: groupSchema,
+        docCount: groupItems.length,
+      });
     }
+    return inferredTypesResult;
   }
 
   /**

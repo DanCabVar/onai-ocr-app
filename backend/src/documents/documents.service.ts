@@ -5,12 +5,15 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { DocumentType } from '../database/entities/document-type.entity';
+import { GeminiClassifierService } from '../ai-services/gemini-classifier.service';
 import { In, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Document } from '../database/entities/document.entity';
 import { User } from '../database/entities/user.entity';
 import { DocumentProcessingService } from './services/document-processing.service';
 import { StorageService } from '../storage/storage.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
 
 /**
@@ -43,9 +46,13 @@ export class DocumentsService {
   constructor(
     @InjectRepository(Document)
     private readonly documentRepository: Repository<Document>,
+    @InjectRepository(DocumentType)
+    private readonly documentTypeRepository: Repository<DocumentType>,
     private readonly configService: ConfigService,
     private readonly documentProcessingService: DocumentProcessingService,
     private readonly storageService: StorageService,
+    private readonly geminiClassifierService: GeminiClassifierService,
+    private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
   async uploadFile(file: Express.Multer.File, user: User) {
@@ -607,4 +614,76 @@ export class DocumentsService {
     })();
   }
 
+  /**
+   * Resolve pending_confirmation docs in batch.
+   * Creates types if needed, extracts data, moves to tipos/ in R2.
+   */
+  async resolvePendingBatch(
+    assignments: Array<{ documentId: number; typeName: string; typeId?: number }>,
+    user: User,
+  ) {
+    const results: any[] = [];
+
+    for (const assignment of assignments) {
+      try {
+        const document = await this.documentRepository.findOne({
+          where: { id: assignment.documentId, userId: user.id },
+        });
+        if (!document) { results.push({ documentId: assignment.documentId, status: 'error', message: 'Not found' }); continue; }
+
+        // Find or create type
+        let documentType = assignment.typeId
+          ? await this.documentTypeRepository.findOne({ where: { id: assignment.typeId, userId: user.id } })
+          : await this.documentTypeRepository.findOne({ where: { name: assignment.typeName, userId: user.id } });
+
+        if (!documentType) {
+          // Create new type — schema will be inferred from the document
+          documentType = this.documentTypeRepository.create({
+            userId: user.id,
+            name: assignment.typeName,
+            description: `Tipo "${assignment.typeName}" creado desde procesamiento batch`,
+            fieldSchema: { fields: [] },
+          });
+          await this.documentTypeRepository.save(documentType);
+          this.documentProcessingService.invalidateTypesCache();
+        }
+
+        // Extract data using the type schema
+        let extractedData: any = null;
+        try {
+          if (document.storageKey) {
+            const fileBuffer = await this.storageService.downloadFile(document.storageKey);
+            const mimeType = document.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
+            extractedData = await this.geminiClassifierService.extractDataWithVision(fileBuffer, mimeType, documentType);
+
+            // Move to tipos/ folder
+            const typedKey = this.storageService.buildTypedKey(user.id, documentType.name, document.filename);
+            await this.storageService.uploadFile(fileBuffer, typedKey, mimeType);
+            await this.storageService.deleteFile(document.storageKey).catch(() => {});
+
+            await this.documentRepository.update(document.id, {
+              documentTypeId: documentType.id,
+              storageKey: typedKey,
+              extractedData: extractedData || {},
+              status: 'completed',
+            });
+          }
+        } catch (e: any) {
+          this.logger.warn(`Extraction failed for doc ${document.id}: ${e.message}`);
+          await this.documentRepository.update(document.id, {
+            documentTypeId: documentType.id,
+            extractedData: {},
+            status: 'completed',
+          });
+        }
+
+        await this.subscriptionsService.incrementUsage(user.id);
+        results.push({ documentId: document.id, status: 'completed', typeName: documentType.name });
+      } catch (e: any) {
+        results.push({ documentId: assignment.documentId, status: 'error', message: e.message });
+      }
+    }
+
+    return { success: true, results, total: results.length, completed: results.filter(r => r.status === 'completed').length };
+  }
 }

@@ -194,6 +194,16 @@ export const documentsService = {
   },
 
   /**
+   * Resolver docs pending_confirmation en batch con tipos asignados
+   */
+  async resolvePendingBatch(
+    assignments: Array<{ documentId: number; typeName: string; typeId?: number }>,
+  ): Promise<{ success: boolean; results: any[]; total: number; completed: number }> {
+    const response = await apiClient.post('/documents/resolve-pending-batch', { assignments });
+    return response.data;
+  },
+
+  /**
    * Re-procesa un documento con error o pendiente
    */
   async reprocess(id: number): Promise<{ success: boolean; message: string }> {

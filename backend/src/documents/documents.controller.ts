@@ -193,4 +193,13 @@ export class DocumentsController {
   ) {
     return this.documentsService.reprocessDocument(Number(id), user);
   }
+  @Post('resolve-pending-batch')
+  @UseGuards(JwtAuthGuard)
+  async resolvePendingBatch(
+    @Body() body: { assignments: Array<{ documentId: number; typeName: string; typeId?: number }> },
+    @CurrentUser() user: User,
+  ) {
+    if (!body.assignments?.length) throw new BadRequestException('Se requiere assignments');
+    return this.documentsService.resolvePendingBatch(body.assignments, user);
+  }
 }
