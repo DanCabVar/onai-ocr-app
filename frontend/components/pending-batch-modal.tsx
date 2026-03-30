@@ -357,18 +357,21 @@ export function PendingBatchModal({
         )}
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t flex items-center justify-between gap-3 shrink-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <div className="flex gap-2">
-            <Button variant="outline" className="gap-2" onClick={() => window.dispatchEvent(new CustomEvent("openNewTypeModal"))}>
+        <div className="px-4 py-3 border-t shrink-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
+          {/* Botón principal full-width en mobile */}
+          {pendingDocs.length > 0 && (
+            <Button onClick={handleSubmit} disabled={submitting} className="gap-2 w-full sm:w-auto sm:order-3">
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              {submitting ? "Procesando..." : `Aceptar y extraer (${pendingDocs.length} docs)`}
+            </Button>
+          )}
+          <div className="flex gap-2 sm:order-1">
+            <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1 sm:flex-none">
+              Cancelar
+            </Button>
+            <Button variant="outline" className="gap-2 flex-1 sm:flex-none" onClick={() => window.dispatchEvent(new CustomEvent("openNewTypeModal"))}>
               <Plus className="h-4 w-4" />Nuevo tipo manual
             </Button>
-            {pendingDocs.length > 0 && (
-              <Button onClick={handleSubmit} disabled={submitting} className="gap-2">
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                {submitting ? "Procesando..." : `Aceptar y extraer (${pendingDocs.length} docs)`}
-              </Button>
-            )}
           </div>
         </div>
       </DialogContent>
