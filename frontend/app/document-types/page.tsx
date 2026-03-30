@@ -295,38 +295,29 @@ export default function DocumentTypesPage() {
                   </div>
                   <div className="overflow-auto flex-1">
                     {selectedType.fieldSchema.fields.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="px-6">Campo</TableHead>
-                            <TableHead className="px-6">Etiqueta</TableHead>
-                            <TableHead className="w-[120px] px-6">Tipo</TableHead>
-                            <TableHead className="w-[100px] text-center px-6">Requerido</TableHead>
-                            <TableHead className="px-6">Descripcion</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {selectedType.fieldSchema.fields.map((field, index) => (
-                            <TableRow key={index}>
-                              <TableCell className="font-mono text-sm py-4 px-6">{field.name}</TableCell>
-                              <TableCell className="font-medium py-4 px-6">{field.label}</TableCell>
-                              <TableCell className="py-4 px-6">
-                                <Badge variant="outline">{field.type}</Badge>
-                              </TableCell>
-                              <TableCell className="text-center py-4 px-6">
-                                {field.required ? (
-                                  <Badge variant="destructive">Si</Badge>
-                                ) : (
-                                  <Badge variant="secondary">No</Badge>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground text-sm py-4 px-6 whitespace-normal max-w-[350px]">
-                                {field.description || "-"}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                      <div className="divide-y">
+                        {selectedType.fieldSchema.fields.map((field, index) => (
+                          <div key={index} className="px-4 py-3 space-y-1.5">
+                            {/* Fila 1: nombre + tipo + requerido */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-sm font-semibold">{field.label || field.name}</span>
+                              {field.label && field.label !== field.name && (
+                                <span className="text-xs text-muted-foreground font-mono">({field.name})</span>
+                              )}
+                              <Badge variant="outline" className="text-xs">{field.type}</Badge>
+                              {field.required ? (
+                                <Badge variant="destructive" className="text-xs">Requerido</Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">Opcional</Badge>
+                              )}
+                            </div>
+                            {/* Fila 2: descripción */}
+                            {field.description && (
+                              <p className="text-xs text-muted-foreground leading-relaxed">{field.description}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     ) : (
                       <div className="p-8 text-center text-muted-foreground font-secondary">
                         Este tipo de documento no tiene campos definidos.
