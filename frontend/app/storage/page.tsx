@@ -885,11 +885,11 @@ export default function StoragePage() {
 
       {/* ── Document Detail Dialog ─────────────────────────────────────── */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="w-[95vw] max-w-2xl md:max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="!w-[96vw] !max-w-[96vw] md:!max-w-5xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
-            <DialogTitle className="font-primary flex items-center gap-2">
-              {detailDoc && getFileIcon(detailDoc.filename)}
-              <span className="truncate">{detailDoc?.filename || "Documento"}</span>
+            <DialogTitle className="font-primary flex items-start gap-2 flex-wrap">
+              <span className="shrink-0 mt-0.5">{detailDoc && getFileIcon(detailDoc.filename)}</span>
+              <span className="break-all min-w-0 flex-1 whitespace-normal leading-snug">{detailDoc?.filename || "Documento"}</span>
             </DialogTitle>
             <DialogDescription>Detalle del documento almacenado</DialogDescription>
           </DialogHeader>
@@ -943,7 +943,7 @@ export default function StoragePage() {
                   {detailDoc.ocrRawText && (
                     <div className="space-y-2">
                       <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Texto OCR</p>
-                      <pre className="text-xs bg-muted/50 rounded-lg p-3 whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono">
+                      <pre className="text-xs bg-muted/50 rounded-lg p-3 whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto overflow-x-hidden font-mono w-full">
                         {detailDoc.ocrRawText}
                       </pre>
                     </div>
