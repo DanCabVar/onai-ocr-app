@@ -348,20 +348,17 @@ export class DocumentsService {
 
     this.logger.log(`Eliminando documento ${documentId} (${document.filename}) de usuario ${user.id}`);
 
-    // Delete from R2 if stored there
+    // Delete from R2
     if (document.storageProvider === 'r2' && document.storageKey) {
       try {
-        await this.storageService.deleteFile(document.storageKey);
+        // Delete main file (already in tipos/ or originals/ depending on status)
+        await this.storageService.deleteFile(document.storageKey).catch(() => {});
         this.logger.log(`✅ Archivo eliminado de R2: ${document.storageKey}`);
 
-        // Also try to delete extracted JSON
-        const extractedPrefix = `${user.id}/extracted/`;
-        const extractedFiles = await this.storageService.listUserFiles(user.id, 'extracted');
-        // Best effort — delete matching extracted files
-        for (const ef of extractedFiles) {
-          if (ef.filename?.includes(document.filename.replace(/\.[^.]+$/, ''))) {
-            await this.storageService.deleteFile(ef.key).catch(() => {});
-          }
+        // Also clean up any lingering copy in originals/ (if file was moved to tipos/)
+        if (document.storageKey.includes('/tipos/')) {
+          const originalsKey = this.storageService.buildKey(user.id, 'originals', document.filename);
+          await this.storageService.deleteFile(originalsKey).catch(() => {});
         }
       } catch (error) {
         this.logger.error(`Error eliminando de R2: ${error.message}`);

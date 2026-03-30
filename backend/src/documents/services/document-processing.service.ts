@@ -302,8 +302,23 @@ export class DocumentProcessingService {
 
       // PASO 6 removed: extractedData is stored in DB (JSONB) — no need for R2 copy
 
+      // ─── Mover archivo de originals/ a tipos/{slug}/ ───
+      const typedKey = this.storageService.buildTypedKey(user.id, documentType.name, originalName);
+      let finalKey = originalKey;
+      try {
+        await this.storageService.uploadFile(fileBuffer, typedKey, mimeType);
+        // Delete from originals only if upload to tipos succeeded
+        if (originalKey !== typedKey) {
+          await this.storageService.deleteFile(originalKey).catch(() => {});
+        }
+        finalKey = typedKey;
+        this.logger.log(`📁 Archivo movido: ${originalKey} → ${typedKey}`);
+      } catch (e: any) {
+        this.logger.warn(`No se pudo mover a tipos/: ${e.message} — manteniendo en originals/`);
+      }
+
       // Generate view URL (7 days)
-      const viewUrl = await this.storageService.getPresignedUrl(originalKey, 7 * 24 * 3600);
+      const viewUrl = await this.storageService.getPresignedUrl(finalKey, 7 * 24 * 3600);
 
       // ─── PASO 7: Save to database ───
       const dbMetric = this.metrics.startStage(ctx, 'save-db');
@@ -312,7 +327,7 @@ export class DocumentProcessingService {
         // Update existing record (reprocess flow — no duplicates)
         await this.documentRepository.update(existingDocId, {
           documentTypeId: documentType.id,
-          storageKey: originalKey,
+          storageKey: finalKey,
           storageProvider: 'r2',
           ocrRawText: ocrResult.text,
           extractedData,
@@ -326,7 +341,7 @@ export class DocumentProcessingService {
           userId: user.id,
           documentTypeId: documentType.id,
           filename: originalName,
-          storageKey: originalKey,
+          storageKey: finalKey,
           storageProvider: 'r2',
           ocrRawText: ocrResult.text,
           extractedData,
