@@ -776,11 +776,11 @@ export default function DocumentsPage() {
 
       {/* Document Detail Modal */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="w-[95vw] max-w-2xl md:max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-2xl md:max-w-5xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle className="font-primary flex items-center gap-2">
               <FileText className="h-5 w-5 shrink-0" />
-              <span className="truncate">{selectedDoc?.filename || "Documento"}</span>
+              <span className="break-words min-w-0">{selectedDoc?.filename || "Documento"}</span>
             </DialogTitle>
             <DialogDescription>
               Detalle completo del documento procesado
