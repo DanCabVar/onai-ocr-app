@@ -23,7 +23,7 @@ import { StorageModule } from '../storage/storage.module';
     StorageModule,
   ],
   controllers: [DocumentsController],
-  providers: [DocumentsService, DocumentProcessingService, GeminiClassifierService, SubscriptionsService],
+  providers: [DocumentsService, DocumentProcessingService, GeminiClassifierService],
   exports: [DocumentsService, DocumentProcessingService],
 })
 export class DocumentsModule {}
