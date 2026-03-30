@@ -28,7 +28,7 @@ interface UploadDocumentModalProps {
 
 type ModalStep = "select" | "uploading" | "confirming" | "results"
 
-type FileItemStatus = "queued" | "uploading" | "ocr" | "classifying" | "completed" | "pending_confirmation" | "error"
+type FileItemStatus = "queued" | "uploading" | "ocr" | "classifying" | "extracting" | "homologating" | "saving" | "completed" | "pending_confirmation" | "error"
 
 interface FileItem {
   file: File
@@ -44,8 +44,11 @@ const MAX_SIZE = 10 * 1024 * 1024 // 10MB
 const STATUS_CONFIG: Record<FileItemStatus, { icon: string; label: string; color: string }> = {
   queued: { icon: "⏳", label: "En cola", color: "text-muted-foreground" },
   uploading: { icon: "🔄", label: "Subiendo...", color: "text-blue-500" },
-  ocr: { icon: "🔄", label: "Procesando OCR...", color: "text-purple-500" },
-  classifying: { icon: "🔄", label: "Clasificando...", color: "text-orange-500" },
+  ocr: { icon: "📄", label: "Extrayendo texto (OCR)...", color: "text-purple-500" },
+  classifying: { icon: "🧠", label: "Clasificando tipo...", color: "text-orange-500" },
+  extracting: { icon: "⚙️", label: "Extrayendo campos...", color: "text-blue-500" },
+  homologating: { icon: "🔗", label: "Homologando tipos...", color: "text-amber-500" },
+  saving: { icon: "💾", label: "Guardando...", color: "text-green-600" },
   completed: { icon: "✅", label: "Completado", color: "text-green-600" },
   pending_confirmation: { icon: "⚠️", label: "Requiere confirmación", color: "text-yellow-600" },
   error: { icon: "❌", label: "Error", color: "text-red-600" },
