@@ -68,6 +68,7 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
   const [pendingBatchOpen, setPendingBatchOpen] = useState(false)
   const [pendingBatchTypes, setPendingBatchTypes] = useState<any[]>([])
   const [pendingBatchDocs, setPendingBatchDocs] = useState<any[]>([])
+  const [pendingBatchProcessed, setPendingBatchProcessed] = useState<any[]>([])
   const [allExistingTypes, setAllExistingTypes] = useState<{id:number;name:string}[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
@@ -244,6 +245,13 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
           suggestedType: p.suggestedType ?? "Desconocido",
           confidence: p.confidence,
         })))
+        // Docs ya procesados correctamente
+        const processed = results.filter(r => r.status === "completed")
+        setPendingBatchProcessed(processed.map(r => ({
+          filename: r.filename,
+          typeName: (r as any).typeName || "Procesado",
+          status: "completed",
+        })))
         documentTypesService.getAll().then(types => {
           setAllExistingTypes(types.map(t => ({ id: t.id, name: t.name })))
         }).catch(() => {})
@@ -380,6 +388,7 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
       onOpenChange={setPendingBatchOpen}
       inferredTypes={pendingBatchTypes}
       pendingDocs={pendingBatchDocs}
+      processedDocs={pendingBatchProcessed}
       existingTypes={allExistingTypes}
       onSuccess={() => { window.dispatchEvent(new CustomEvent("documentUploaded")); onUploadSuccess() }}
     />
