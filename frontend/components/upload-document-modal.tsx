@@ -232,9 +232,9 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
       const pending = results.filter(r => r.status === "pending_confirmation")
       const inferredTypes = (response as any).inferredTypes ?? []
 
-      if (pending.length > 0 && inferredTypes.length > 0) {
-        // Nuevo flujo: modal rico con tipos inferidos
-        setPendingBatchTypes(inferredTypes)
+      if (pending.length > 0) {
+        // Nuevo flujo: siempre usar el modal rico para batch
+        setPendingBatchTypes(inferredTypes)  // puede ser [] si todos son del mismo tipo
         setPendingBatchDocs(pending.map(p => ({
           documentId: p.documentId!,
           filename: p.filename,
@@ -247,20 +247,6 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
         setStep("results")  // cerrar el upload modal
         onOpenChange(false)
         setTimeout(() => setPendingBatchOpen(true), 200)
-      } else if (pending.length > 0) {
-        // Fallback: flujo antiguo si no hay tipos inferidos
-        setPendingDocs(pending)
-        const actions: Record<number, { action: "confirm" | "assign_type" | "cancel"; typeName?: string; typeId?: number }> = {}
-        pending.forEach(doc => {
-          if (doc.documentId) {
-            actions[doc.documentId] = { action: "confirm", typeName: doc.suggestedType }
-          }
-        })
-        setPendingActions(actions)
-        documentTypesService.getAll().then(types => {
-          setAvailableTypes(types.map(t => ({ id: t.id, name: t.name })))
-        }).catch(() => {})
-        setStep("confirming")
       } else {
         setStep("results")
         toast({
