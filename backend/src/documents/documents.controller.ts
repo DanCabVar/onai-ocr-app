@@ -92,7 +92,10 @@ export class DocumentsController {
     if (!files || files.length === 0) {
       throw new BadRequestException('No se proporcionaron archivos.');
     }
-    return this.documentsService.uploadBatch(files, user);
+    // Process async to avoid Cloudflare 524 on large batches
+    // First save files to storage, then process in background
+    this.documentsService.processBatchInBackground(files, user);
+    return { processing: true, total: files.length, message: `${files.length} archivo(s) recibidos, procesando en segundo plano.` };
   }
 
   @Post('batch-status')

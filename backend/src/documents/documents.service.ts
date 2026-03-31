@@ -400,7 +400,7 @@ export class DocumentsService {
   /**
    * Background batch processing.
    */
-  private processBatchInBackground(
+  processBatchInBackground(
     files: Express.Multer.File[],
     user: User,
   ): void {
