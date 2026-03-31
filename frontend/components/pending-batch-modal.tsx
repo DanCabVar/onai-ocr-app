@@ -138,7 +138,7 @@ export function PendingBatchModal({
 
         {/* ── TAB DOCUMENTOS ── */}
         {activeTab === "docs" && (
-          <ScrollArea className="flex-1">
+          <ScrollArea className="flex-1 h-0">
             <div className="divide-y">
               {pendingDocs.map(doc => (
                 <div key={doc.documentId} className="px-5 py-4">
