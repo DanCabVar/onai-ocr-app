@@ -218,5 +218,29 @@ export const documentsService = {
     const response = await apiClient.delete(`/documents/${id}`);
     return response.data;
   },
+
+  /**
+   * Polling de estado para un batch de documentos
+   */
+  async getBatchStatus(documentIds: number[]): Promise<{
+    total: number; completed: number; processing: number; pendingConfirmation: number;
+    errors: number; allDone: boolean;
+    documents: Array<{ id: number; filename: string; status: string; documentTypeName: string | null; confidenceScore: number }>
+  }> {
+    const response = await apiClient.post('/documents/batch-status', { documentIds });
+    return response.data;
+  },
+
+  /**
+   * Obtiene los tipos inferidos para docs pending_confirmation
+   */
+  async getInferredTypes(documentIds: number[]): Promise<{ inferredTypes: any[] }> {
+    try {
+      const response = await apiClient.post('/documents/inferred-types', { documentIds });
+      return response.data;
+    } catch {
+      return { inferredTypes: [] };
+    }
+  },
 };
 

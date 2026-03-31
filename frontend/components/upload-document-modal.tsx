@@ -187,14 +187,73 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
       const isAsync = (response as any).processing === true || !Array.isArray((response as any).results)
 
       if (isAsync) {
-        // Background processing — just acknowledge and close
-        setFileItems(prev => prev.map(item => ({ ...item, status: "completed" as FileItemStatus })))
-        setStep("results")
-        toast({
-          title: "Documentos recibidos",
-          description: `${files.length} archivo(s) subidos. Se están procesando en segundo plano.`,
-        })
-        window.dispatchEvent(new CustomEvent("documentUploaded", { detail: response }))
+        const documentIds: number[] = (response as any).documentIds ?? []
+        // Show uploading → classifying while polling
+        setFileItems(prev => prev.map(item => ({ ...item, status: "classifying" as FileItemStatus })))
+
+        // Poll batch-status until all done
+        if (documentIds.length > 0) {
+          const poll = async () => {
+            const maxAttempts = 60 // 2 min max
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              await new Promise(r => setTimeout(r, 2000))
+              try {
+                const status = await documentsService.getBatchStatus(documentIds)
+                if (status.allDone) {
+                  // Update file items with real status
+                  setFileItems(prev => prev.map(item => {
+                    const doc = status.documents.find((d: any) => d.filename === item.file.name)
+                    if (!doc) return { ...item, status: "completed" as FileItemStatus }
+                    return {
+                      ...item,
+                      status: doc.status === "completed" ? "completed" as FileItemStatus
+                        : doc.status === "pending_confirmation" ? "pending_confirmation" as FileItemStatus
+                        : "error" as FileItemStatus,
+                    }
+                  }))
+
+                  const pending = status.documents.filter((d: any) => d.status === "pending_confirmation")
+                  const completed = status.documents.filter((d: any) => d.status === "completed")
+
+                  if (pending.length > 0) {
+                    // Fetch inferred types and open batch modal
+                    const inferredTypesRes = await documentsService.getInferredTypes(documentIds).catch(() => ({ inferredTypes: [] }))
+                    setPendingBatchTypes(inferredTypesRes.inferredTypes ?? [])
+                    setPendingBatchDocs(pending.map((d: any) => ({
+                      documentId: d.id,
+                      filename: d.filename,
+                      suggestedType: d.documentTypeName ?? "Desconocido",
+                      confidence: d.confidenceScore,
+                    })))
+                    setPendingBatchProcessed(completed.map((d: any) => ({
+                      filename: d.filename,
+                      typeName: d.documentTypeName || "Procesado",
+                      status: "completed",
+                    })))
+                    documentTypesService.getAll().then(types => {
+                      setAllExistingTypes(types.map(t => ({ id: t.id, name: t.name })))
+                    }).catch(() => {})
+                    onOpenChange(false)
+                    setTimeout(() => setPendingBatchOpen(true), 200)
+                  } else {
+                    setStep("results")
+                    toast({ title: "Lote procesado", description: `${completed.length} de ${documentIds.length} archivos completados.` })
+                    window.dispatchEvent(new CustomEvent("documentUploaded", { detail: response }))
+                  }
+                  return
+                }
+              } catch (e) { /* keep polling */ }
+            }
+            // Timeout — inform user
+            setStep("results")
+            toast({ title: "Procesando en segundo plano", description: "El lote tardó más de lo esperado. Revisa Documentos en unos minutos." })
+            window.dispatchEvent(new CustomEvent("documentUploaded", { detail: response }))
+          }
+          poll()
+        } else {
+          setStep("results")
+          toast({ title: "Documentos recibidos", description: `${files.length} archivo(s) en procesamiento.` })
+        }
         return
       }
 

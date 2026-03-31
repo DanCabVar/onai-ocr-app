@@ -92,10 +92,8 @@ export class DocumentsController {
     if (!files || files.length === 0) {
       throw new BadRequestException('No se proporcionaron archivos.');
     }
-    // Process async to avoid Cloudflare 524 on large batches
-    // First save files to storage, then process in background
-    this.documentsService.processBatchInBackground(files, user);
-    return { processing: true, total: files.length, message: `${files.length} archivo(s) recibidos, procesando en segundo plano.` };
+    // Upload to R2 + create DB records immediately, process OCR/classification in background
+    return this.documentsService.uploadAndQueueBatch(files, user);
   }
 
   @Post('batch-status')
@@ -107,6 +105,16 @@ export class DocumentsController {
       throw new BadRequestException('Se requiere documentIds');
     }
     return this.documentsService.getBatchStatus(body.documentIds, user);
+  }
+
+  @Post('inferred-types')
+  @UseGuards(JwtAuthGuard)
+  async getInferredTypes(
+    @Body() body: { documentIds: number[] },
+    @CurrentUser() user: User,
+  ) {
+    if (!body.documentIds?.length) return { inferredTypes: [] };
+    return this.documentsService.getInferredTypes(body.documentIds, user);
   }
 
   @Post('confirm-type')

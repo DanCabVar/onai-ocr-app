@@ -247,6 +247,36 @@ export class DocumentsService {
   /**
    * Batch status check — returns status of multiple documents at once.
    */
+  async getInferredTypes(documentIds: number[], user: User): Promise<{ inferredTypes: any[] }> {
+    const docs = await this.documentRepository.find({
+      where: { id: In(documentIds), userId: user.id, status: 'pending_confirmation' as any },
+      select: ['id', 'filename', 'inferredData', 'confidenceScore'],
+    });
+
+    // Group by inferred type name
+    const typeMap = new Map<string, { name: string; schema: any[]; docCount: number; docs: any[] }>();
+    for (const doc of docs) {
+      const typeName: string = (doc.inferredData as any)?.inferred_type || 'Documento Desconocido';
+      const fields: any[] = (doc.inferredData as any)?.key_fields || [];
+      const schema = fields.map((f: any) => ({
+        name: f.name,
+        label: f.label || f.name,
+        type: f.type || 'string',
+        required: f.required ?? false,
+        description: f.description || '',
+      }));
+
+      if (!typeMap.has(typeName)) {
+        typeMap.set(typeName, { name: typeName, schema, docCount: 0, docs: [] });
+      }
+      const entry = typeMap.get(typeName)!;
+      entry.docCount++;
+      entry.docs.push({ documentId: doc.id, filename: doc.filename, confidence: doc.confidenceScore });
+    }
+
+    return { inferredTypes: Array.from(typeMap.values()) };
+  }
+
   async getBatchStatus(documentIds: number[], user: User) {
     const documents = await this.documentRepository.find({
       where: { id: In(documentIds), userId: user.id },
@@ -395,6 +425,38 @@ export class DocumentsService {
     this.logger.log(`📦 Batch upload: ${files.length} archivos para usuario ${user.id}`);
     // Use processBatch which handles classification, pending_confirmation, etc.
     return this.documentProcessingService.processBatch(files, user);
+  }
+
+  /**
+   * Upload files to R2, create DB records with status "processing",
+   * return document IDs immediately, then process OCR+classification in background.
+   */
+  async uploadAndQueueBatch(files: Express.Multer.File[], user: User): Promise<{ processing: true; total: number; documentIds: number[] }> {
+    this.logger.log(`📦 Queue batch: ${files.length} archivos para usuario ${user.id}`);
+    const documentIds: number[] = [];
+
+    for (const file of files) {
+      try {
+        const storageKey = this.storageService.buildKey(user.id, 'originals', file.originalname);
+        await this.storageService.uploadFile(file.buffer, storageKey, file.mimetype);
+        const doc = this.documentRepository.create({
+          userId: user.id,
+          filename: file.originalname,
+          storageKey,
+          storageProvider: 'r2',
+          status: 'processing',
+        });
+        await this.documentRepository.save(doc);
+        documentIds.push(doc.id);
+      } catch (e: any) {
+        this.logger.warn(`Upload failed for ${file.originalname}: ${e.message}`);
+      }
+    }
+
+    // Process OCR + classification in background
+    this.processBatchInBackground(files, user);
+
+    return { processing: true, total: documentIds.length, documentIds };
   }
 
   /**
