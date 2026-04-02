@@ -35,6 +35,11 @@ export class AuthController {
     return this.authService.resendVerification(dto.email);
   }
 
+  @Get('health')
+  healthCheck() {
+    return { status: 'ok', timestamp: new Date().toISOString() };
+  }
+
   @Get('profile')
   @UseGuards(JwtAuthGuard)
   async getProfile(@CurrentUser() user: User) {
