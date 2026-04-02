@@ -14,9 +14,7 @@ import { Document } from './database/entities/document.entity';
 import { DocumentType } from './database/entities/document-type.entity';
 import { Subscription } from './database/entities/subscription.entity';
 
-// NOTE: GoogleDriveModule disabled — R2 storage is now the primary provider.
-// The google-drive/ directory is kept for reference but not imported.
-// import { GoogleDriveModule } from './google-drive/google-drive.module';
+// GoogleDriveModule removed — R2 (Cloudflare) is the storage provider.
 
 @Module({
   controllers: [UsersController],
@@ -49,7 +47,7 @@ import { Subscription } from './database/entities/subscription.entity';
     StorageModule,
     SubscriptionsModule,
     StripeModule,
-    // GoogleDriveModule, // DISABLED — replaced by StorageModule (R2)
+
     DocumentTypesModule,
     DocumentsModule,
     ChatModule,

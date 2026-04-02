@@ -14,8 +14,6 @@ import { CreateDocumentTypeDto } from './dto/create-document-type.dto';
 import { UpdateDocumentTypeDto } from './dto/update-document-type.dto';
 import { DocumentProcessingService } from '../documents/services/document-processing.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
-// NOTE: GoogleDriveService replaced by R2 storage. Folder creation no longer needed.
-// import { GoogleDriveService } from '../google-drive/services/google-drive.service';
 
 @Injectable()
 export class DocumentTypesService {
