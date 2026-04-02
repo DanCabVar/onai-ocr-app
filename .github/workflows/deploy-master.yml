@@ -10,7 +10,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/onai-ocr
+  IMAGE_PREFIX: ghcr.io/dancabvar/onai-ocr
 
 jobs:
   # ─────────────────────────────────────
