@@ -60,13 +60,11 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
+          command_timeout: 15m
           script: |
             set -e
-            cd /root/.openclaw/workspace/onai-ocr-app
-            git fetch origin master
-            git reset --hard origin/master
             cd /docker/onai-ocr
-            docker compose build --no-cache
+            docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -f
             echo "✅ Deploy completado: $(date)"
