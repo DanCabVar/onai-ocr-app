@@ -15,3 +15,4 @@
 | T10 / SPEC-10 | `03_specs/active/SPEC-10_inferencia_muestras_paralelo_sse.md` | Disponible | 2026-05-27 | Nueva tarea MC2 pendiente: subir paralelismo y agregar progress events SSE. |
 | T11 / SPEC-11 | `03_specs/active/SPEC-11_go_to_market_marketing.md` | Backlog | 2026-05-27 | Nueva tarea MC2 pendiente comercial: contenido LinkedIn/Instagram. |
 | T12 / SPEC-12 | `03_specs/active/SPEC-12_operacion_legal_facturacion.md` | Requiere decisión usuario | 2026-05-27 | Nueva tarea MC2 pendiente: crear empresa/facturación; requiere acción humana. |
+| MC2-DONE-20260527 | `03_specs/done/SPEC-DONE-20260527_mc2_ocr_ai_completed.md` | Cerrada / importada | 2026-05-27 | Consolidado de 89 tareas `done` desde MC2 OCR AI para trazabilidad anti-retrabajo. |

@@ -23,6 +23,7 @@ Tablero operativo canónico del proyecto ONAI OCR. Define estado actual, priorid
 - MC2 operativo en `https://mc2.moti.cl`.
 - MC2 board OCR AI: 98 tareas; 89 `done`, 9 `inbox`.
 - Snapshot completo MC2: `docs/06_history/MC2_TASKS_OCR_AI_2026-05-27.md`.
+- Specs done importados desde MC2: `docs/03_specs/done/SPEC-DONE-20260527_mc2_ocr_ai_completed.md`.
 - CI/CD por GitHub Actions existe; workflow `deploy-master.yml` hizo deploy exitoso a producción el `2026-04-02` vía GHCR + SSH.
 
 ## Arquitectura resumida
