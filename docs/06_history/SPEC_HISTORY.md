@@ -20,7 +20,8 @@
 | T16 / SPEC-16 | `03_specs/active/SPEC-16_test_obligatorio_por_spec.md` | En revisión | 2026-05-27 | Se agrega validador CI (`docs/scripts/validate-spec-test-policy.py`) + refuerzo de template/runbook; pendiente validacion en PR real de feature. |
 | T17 / SPEC-17 | `03_specs/active/SPEC-17_integracion_pagos_polar_sh.md` | Requiere decision usuario | 2026-05-27 | Spec activo incorporado a tablero canonico; definir estrategia Stripe vs Polar antes de implementar. |
 | T18 / SPEC-18 | `03_specs/active/SPEC-18_mejorar_landing.md` | Backlog | 2026-05-27 | Spec activo incorporado a tablero canonico; mejora comercial pendiente de priorizacion. |
-| T19 / SPEC-19 | `03_specs/active/SPEC-19_revision_separacion_tenant.md` | Disponible | 2026-05-27 | Spec activo incorporado a tablero canonico; auditoria end-to-end de aislamiento multi-tenant pendiente. |
+| T19 / SPEC-19 | `03_specs/active/SPEC-19_revision_separacion_tenant.md` | En revision | 2026-05-27 | Auditoria tecnica iniciada en rama `codex/spec-19-revision-separacion-tenant`; en deploy/all-features se actualiza solo estado documental. |
 | T20 / SPEC-20 | `03_specs/active/SPEC-20_mejorar_agent_rag_neo4j.md` | Backlog | 2026-05-27 | Spec activo incorporado a tablero canonico; iniciativa exploratoria sujeta a madurez de hardening actual. |
 | T21 / SPEC-21 | `03_specs/active/SPEC-21_respaldo_documentos_markdown_obsidian.md` | Backlog | 2026-05-27 | Spec activo incorporado a tablero canonico; pendiente definir retencion y seguridad de backups Markdown. |
 | MC2-DONE-20260527 | `03_specs/done/SPEC-DONE-20260527_mc2_ocr_ai_completed.md` | Cerrada / importada | 2026-05-27 | Consolidado de 89 tareas `done` desde MC2 OCR AI para trazabilidad anti-retrabajo. |
+
