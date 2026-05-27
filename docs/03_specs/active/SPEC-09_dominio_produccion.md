@@ -8,6 +8,10 @@
 
 Migrar o complementar `ocr.moti.cl` con dominio profesional definitivo para ONAI, manteniendo SSL, rutas API y compatibilidad.
 
+## Estado conocido MC2 — 2026-05-27
+
+MC2 mantiene pendiente `SSL propio + dominio onaiconsulting.cl o onai.cl`. El spec queda en `Requiere decisión usuario` hasta elegir dominio final.
+
 ## Alcance
 
 Incluye:

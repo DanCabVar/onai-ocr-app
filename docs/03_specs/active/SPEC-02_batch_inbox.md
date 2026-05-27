@@ -16,7 +16,12 @@ Backend ya expone endpoints relacionados:
 - `POST /api/documents/batch-status`
 - `POST /api/documents/resolve-pending-batch`
 
-MC2 registra que backend Fase 3 fue completado y que queda pendiente frontend modo inbox.
+MC2 sincronizado 2026-05-27:
+
+- `FASE 3 ✅ Backend: endpoint upload-to-inbox + worker background` figura `done`.
+- `PENDIENTE: Frontend modo inbox en upload modal` sigue `inbox`/alta.
+- `QA LEVE: Checkbox background mode visible solo post-selección archivos` sigue `inbox`/media, descrito como aceptable/no bloqueante.
+- `QA LEVE: Polling interval ~3.6s en vez de 5s` figura `done` y aceptable.
 
 ## Alcance
 

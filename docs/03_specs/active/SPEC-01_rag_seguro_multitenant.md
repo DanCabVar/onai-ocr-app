@@ -8,6 +8,10 @@
 
 Auditar y asegurar que el chat/RAG no pueda filtrar datos entre usuarios/tenants aunque la IA genere SQL incorrecto.
 
+## Estado conocido MC2 — 2026-05-27
+
+MC2 marca como `done` la tarea `SECURITY: RLS + vistas filtradas para aislamiento RAG multi-tenant` y varios fixes de chat/RAG. El harness mantiene este spec `En revisión` hasta comprobar políticas/vistas, contexto `app.current_user_id` y comportamiento con dos usuarios en el código/DB actual.
+
 ## Alcance
 
 Incluye:

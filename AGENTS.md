@@ -26,7 +26,7 @@ Antes de trabajar cualquier tarea, leer en este orden:
 - `docs/03_specs/active/`: contratos canónicos de trabajo pendiente/en curso.
 - `docs/03_specs/done/`: specs cerrados, archivados o reemplazados.
 - `docs/06_history/SPEC_HISTORY.md`: índice histórico para evitar retrabajo.
-- `docs/06_history/DECISIONS.md` y `06_history/decisions/`: decisiones tipo ADR.
+- `docs/06_history/DECISIONS.md` y `docs/06_history/decisions/`: decisiones tipo ADR.
 - `docs/06_history/INCIDENTS.md`: incidentes relevantes.
 - `docs/07_runbooks/`: procedimientos repetibles.
 - `docs/05_entregables/`: evidencia final: releases, QA reports, deploy notes y docs cliente.
@@ -36,14 +36,14 @@ Si hay conflicto entre MC2 y este repo, prevalece `PLAN_MAESTRO.md` hasta que se
 ## Estructura
 
 ```txt
-01_fuentes/       Fuentes, referencias y documentos externos/internos base
-02_contexto/      Memoria estable del proyecto, sin reemplazar el plan
-03_specs/active/  Specs pendientes/en curso
-03_specs/done/    Specs cerrados/archivados
-04_trabajo/       Workbench por tarea TXX
-05_entregables/   Releases, QA reports, deploy notes y docs cliente
-06_history/       Historial, ADRs, incidentes y log de implementación
-07_runbooks/      Procedimientos repetibles
+docs/01_fuentes/       Fuentes, referencias y documentos externos/internos base
+docs/02_contexto/      Memoria estable del proyecto, sin reemplazar el plan
+docs/03_specs/active/  Specs pendientes/en curso
+docs/03_specs/done/    Specs cerrados/archivados
+docs/04_trabajo/       Workbench por tarea TXX
+docs/05_entregables/   Releases, QA reports, deploy notes y docs cliente
+docs/06_history/       Historial, ADRs, incidentes y log de implementación
+docs/07_runbooks/      Procedimientos repetibles
 ```
 
 ## Regla anti-retrabajo
@@ -66,7 +66,7 @@ Cada tarea relevante debe tener:
 - prioridad
 - estado
 - bloqueo/dependencia si aplica
-- spec asociado en `03_specs/active/` o `03_specs/done/`
+- spec asociado en `docs/03_specs/active/` o `docs/03_specs/done/`
 - entregable esperado
 - criterio de aceptación
 - verificación mínima: test, build, lint, curl, logs, screenshot o inspección directa
@@ -125,10 +125,10 @@ Una tarea no se marca `Cerrada` hasta que:
 - tiene evidencia de verificación;
 - no rompe build/lint/test relevante;
 - deploy/rollback está claro si toca producción;
-- `PLAN_MAESTRO.md` queda actualizado;
-- `06_history/SPEC_HISTORY.md` queda actualizado;
-- si aplica, el spec se mueve/copia desde `03_specs/active/` a `03_specs/done/`;
-- si aplica, se deja nota en `05_entregables/`.
+- `docs/PLAN_MAESTRO.md` queda actualizado;
+- `docs/06_history/SPEC_HISTORY.md` queda actualizado;
+- si aplica, el spec se mueve/copia desde `docs/03_specs/active/` a `docs/03_specs/done/`;
+- si aplica, se deja nota en `docs/05_entregables/`.
 
 ## Cuándo dividir vs consolidar specs
 
@@ -145,7 +145,7 @@ Consolidar o evitar crear un spec nuevo cuando:
 - solo es una corrección menor del mismo flujo;
 - generaría specs de una sesión sin valor histórico.
 
-Threshold operativo: si `03_specs/active/` supera 20 specs, hacer triage antes de agregar más.
+Threshold operativo: si `docs/03_specs/active/` supera 20 specs, hacer triage antes de agregar más.
 
 ## Reglas técnicas del proyecto
 
@@ -169,4 +169,4 @@ Según el cambio:
 - Infra: `docker compose config`, health endpoints, logs.
 - UI: screenshot o navegador cuando aplique.
 - Producción: `curl https://ocr.moti.cl/api/auth/health` + container health.
-- Harness/docs: `python3 scripts/validate-harness.py`.
+- Harness/docs: `python3 docs/scripts/validate-harness.py`.

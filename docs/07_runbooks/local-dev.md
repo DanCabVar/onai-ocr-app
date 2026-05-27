@@ -16,4 +16,4 @@ Dar una guía mínima para levantar/verificar componentes locales sin confundirl
    - Backend: `cd backend && pnpm run build`
    - Frontend: `cd frontend && pnpm run build` o `pnpm lint`
    - Processor: tests/ruff si aplica
-4. Registrar evidencia en el reporte final y, si corresponde, en `05_entregables/`.
+4. Registrar evidencia en el reporte final y, si corresponde, en `docs/05_entregables/`.

@@ -8,6 +8,10 @@
 
 Detectar rápido caídas o degradación de ONAI OCR y dejar un runbook mínimo de operación.
 
+## Estado conocido MC2 — 2026-05-27
+
+MC2 mantiene `Health checks, monitoring y alertas` en `inbox`/alta. Aunque existen health endpoints puntuales, falta paquete operativo reproducible con alerta y runbook.
+
 ## Alcance inicial
 
 Incluye:
@@ -35,7 +39,7 @@ Excluye:
 
 - Ejecutar script de health.
 - Simular o revisar path de error sin tumbar producción.
-- Documentar resultado en `05_entregables/qa_reports/` o `deploy_notes/`.
+- Documentar resultado en `docs/05_entregables/qa_reports/` o `docs/05_entregables/deploy_notes/`.
 
 ## Riesgos
 

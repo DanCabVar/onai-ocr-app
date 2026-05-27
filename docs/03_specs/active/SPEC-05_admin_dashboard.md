@@ -8,6 +8,10 @@
 
 Crear/consolidar dashboard interno para Danilo/ONAI con métricas de tenants, uso, costos, procesamiento y salud operativa.
 
+## Estado conocido MC2 — 2026-05-27
+
+MC2 contiene una tarea `Dashboard admin: métricas de costos API, usuarios, usage` marcada `done`, pero el harness no la cierra hasta verificar rutas, permisos y datos reales en el código actual.
+
 ## Alcance
 
 Incluye:

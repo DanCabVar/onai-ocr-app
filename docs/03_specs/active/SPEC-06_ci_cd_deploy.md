@@ -37,8 +37,8 @@ Excluye:
 
 - `/root/.openclaw/workspace/INFRA.md`
 - `.github/workflows/*.yml`
-- `02_contexto/arquitectura_actual.md`
-- `05_entregables/deploy_notes/`
+- `docs/02_contexto/arquitectura_actual.md`
+- `docs/05_entregables/deploy_notes/`
 
 ## Criterios de aceptación
 

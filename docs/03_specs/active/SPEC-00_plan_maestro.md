@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Mantener `PLAN_MAESTRO.md` como fuente canónica del proyecto y sincronizarlo con MC2 cuando se creen, cierren o cambien tareas.
+Mantener `docs/PLAN_MAESTRO.md` como fuente canónica del proyecto y sincronizarlo con MC2 cuando se creen, cierren o cambien tareas.
 
 ## Alcance
 
@@ -11,7 +11,7 @@ Incluye:
 - actualización de prioridades, estados, bloqueos y entregables;
 - registro de nuevas tareas `TXX`;
 - creación de spec si la tarea requiere desarrollo/análisis;
-- actualización de contexto estable en `02_contexto/`.
+- actualización de contexto estable en `docs/02_contexto/`.
 
 Excluye:
 
@@ -19,10 +19,10 @@ Excluye:
 
 ## Archivos relevantes
 
-- `PLAN_MAESTRO.md`
+- `docs/PLAN_MAESTRO.md`
 - `AGENTS.md`
-- `02_contexto/mc2_estado.md`
-- `03_specs/`
+- `docs/02_contexto/mc2_estado.md`
+- `docs/03_specs/`
 
 ## Criterios de aceptación
 
@@ -34,7 +34,7 @@ Excluye:
 
 ## Verificación mínima
 
-- Inspección directa de `PLAN_MAESTRO.md`.
+- Inspección directa de `docs/PLAN_MAESTRO.md`.
 - Si aplica, consulta MC2 board OCR AI.
 
 ## Reporte esperado

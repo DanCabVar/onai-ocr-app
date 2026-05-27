@@ -16,17 +16,13 @@ Tablero operativo canónico del proyecto ONAI OCR. Define estado actual, priorid
 - MC2 board: `OCR AI`
 - Board ID: `feb3547b-3f99-4b54-a68e-b6fd014bd112`
 
-## Snapshot operativo — 2026-05-18
+## Snapshot operativo — 2026-05-27
 
-- App pública responde `200`.
-- Backend health responde `status: ok`.
-- Containers `frontend`, `backend`, `processor`, `postgres` corriendo.
-- DB productiva observada:
-  - `users`: 10
-  - `documents`: 64
-  - `document_types`: 13
+- Pull realizado sobre `deploy/all-features`: entraron commits que movieron `AGENTS.md` de `docs/` a la raíz del repo y ajustaron su referencia a `docs/PLAN_MAESTRO.md`.
+- Harness documental queda bajo `docs/`, excepto `AGENTS.md`, que vive en la raíz para que los agentes lo encuentren automáticamente.
 - MC2 operativo en `https://mc2.moti.cl`.
 - MC2 board OCR AI: 98 tareas; 89 `done`, 9 `inbox`.
+- Snapshot completo MC2: `docs/06_history/MC2_TASKS_OCR_AI_2026-05-27.md`.
 - CI/CD por GitHub Actions existe; workflow `deploy-master.yml` hizo deploy exitoso a producción el `2026-04-02` vía GHCR + SSH.
 
 ## Arquitectura resumida
@@ -35,58 +31,77 @@ Tablero operativo canónico del proyecto ONAI OCR. Define estado actual, priorid
 |---|---|---|
 | Frontend | Next.js | Producción activa |
 | Backend | NestJS | Producción activa, health ok |
-| Processor | Python/LangGraph-ish | Producción activa, health ok |
+| Processor | Python/LangGraph-ish | Producción activa, con intención histórica de deprecar/consolidar en NestJS |
 | DB | PostgreSQL | Producción activa |
-| Storage | Cloudflare R2 | Activo |
+| Storage | Cloudflare R2 | Activo; legacy `extracted/` pendiente de limpieza segura |
 | IA/OCR | Mistral + Gemini | Activo |
 | Reverse proxy | Traefik | Activo |
-| CI/CD | GitHub Actions + GHCR + SSH | Activo para `master`; revisar ramas `dev/main` |
-| Orquestación agentes | MC2 | Activo como tablero; subagentes sin actividad reciente |
+| CI/CD | GitHub Actions + GHCR + SSH | Activo para deploy producción; documentar/ordenar ramas |
+| Orquestación agentes | MC2 | Activo como tablero; harness repo es fuente canónica |
 
-## Tareas prioritarias
+## Lectura MC2 — qué ya está realizado
+
+MC2 marca como `done` 89 tareas. Las líneas relevantes para no retrabajar:
+
+- Deploy inicial en `ocr.moti.cl` completado.
+- Migración a Cloudflare R2 completada y Google Drive legacy eliminado en gran parte.
+- Esquema multi-tenant, suscripciones, límites de plan y hardening RAG/SQL figuran como completados en MC2.
+- Landing/pricing/Stripe checkout/webhooks figuran como completados en MC2.
+- RAG SQL/chat inteligente y múltiples fixes de seguridad/API figuran como completados.
+- Backend batch/inbox (`upload-to-inbox` + worker background) completado.
+- Modal confirming con 3 opciones y acción backend `assign_type` completados.
+- Eliminación real de documentos y bloqueo de eliminación de tipos con documentos completados.
+- Fixes QA recientes completados: `/almacenamiento` redirect, alias `inferFromSamplesWithProgress`, polling aceptable, eliminación real.
+
+Regla: cualquier tarea marcada done en MC2 debe verificarse contra código/producción antes de reabrirse, pero no se reimplementa sin evidencia de drift.
+
+## Tareas prioritarias vigentes
 
 | ID | Prioridad | Tarea | Estado | Spec | Bloqueo / dependencia | Entregable | Próxima acción |
 |---|---:|---|---|---|---|---|---|
-| T01 | Alta | Frontend modo inbox/background upload | Disponible para agente | `03_specs/active/SPEC-02_batch_inbox.md` | Backend ya tiene endpoint; falta UI final/polling UX | Modal/panel funcional para upload background | Revisar implementación actual y cerrar UX |
-| T02 | Media-Alta | Script limpieza R2 legacy `extracted/` | Disponible para agente | `03_specs/active/SPEC-03_r2_cleanup.md` | Requiere modo dry-run antes de borrar | Script seguro + reporte dry-run | Implementar script con dry-run y confirmación |
-| T03 | Alta | Monitoring, health checks y alertas | Disponible para agente | `03_specs/active/SPEC-07_monitoring_observabilidad.md` | Definir canal de alerta | Health dashboard/checks mínimos | Diseñar checks y cron/alertas |
-| T04 | Alta | Actualizar documentación CI/CD e infraestructura | Disponible para agente | `03_specs/active/SPEC-06_ci_cd_deploy.md` | Ninguno | Docs consistentes con deploy real | Actualizar `INFRA.md` y docs repo |
-| T05 | Media-Alta | Stripe/billing/planes | Backlog | `03_specs/active/SPEC-04_planes_stripe_billing.md` | Requiere decisión de pricing final | Checkout + enforcement planes | Validar modelo comercial antes de implementar |
-| T06 | Media-Alta | Admin dashboard ONAI | Backlog | `03_specs/active/SPEC-05_admin_dashboard.md` | Definir métricas y rol admin | Dashboard interno de uso/costos/tenants | Revisar branches existentes y consolidar |
-| T07 | Media | Onboarding usuario nuevo | Backlog | `03_specs/active/SPEC-08_onboarding.md` | Depende de UX producto | Flujo primer tipo/documento | Crear spec detallado luego |
-| T08 | Alta | Hardening multi-tenant/RAG seguro | En revisión | `03_specs/active/SPEC-01_rag_seguro_multitenant.md` | Confirmar migraciones realmente aplicadas en prod | RLS/vistas/prompt verificados | Auditar DB y backend |
-| T09 | Media | Dominio profesional ONAI | Backlog | `03_specs/active/SPEC-09_dominio_produccion.md` | Decisión dominio final | DNS/SSL/Traefik actualizado | Definir dominio oficial |
+| T01 | Alta | Cerrar frontend modo inbox/background upload | Disponible para agente | `docs/03_specs/active/SPEC-02_batch_inbox.md` | Backend ya figura done en MC2; queda UX/modal/panel | Checkbox, upload background y estados visibles en `/documents` | Auditar UI actual y cerrar pendiente MC2 |
+| T02 | Media-Alta | Script limpieza R2 legacy `extracted/` | Disponible para agente | `docs/03_specs/active/SPEC-03_r2_cleanup.md` | Destructivo; delete real requiere aprobación posterior | Script seguro + reporte dry-run | Implementar dry-run y guardar reporte |
+| T03 | Alta | Health checks, monitoring y alertas | Disponible para agente | `docs/03_specs/active/SPEC-07_monitoring_observabilidad.md` | Definir canal de alerta | Script/checks + runbook + logs | Diseñar checks mínimos y alerta no ruidosa |
+| T04 | Alta | Documentación CI/CD e infraestructura | En revisión | `docs/03_specs/active/SPEC-06_ci_cd_deploy.md` | Ninguno | Docs consistentes con deploy real | Revisar contradicciones restantes y cerrar |
+| T05 | Media | Planes, Stripe, billing y oferta Enterprise | En revisión | `docs/03_specs/active/SPEC-04_planes_stripe_billing.md` | Pricing/empresa/facturación chilena requieren decisión | Estado técnico verificado + pendientes comerciales separados | Auditar código Stripe/límites antes de cerrar |
+| T06 | Media | Admin dashboard ONAI | En revisión | `docs/03_specs/active/SPEC-05_admin_dashboard.md` | Confirmar si lo done en MC2 existe en código | Dashboard admin verificado o brecha documentada | Revisar rutas/admin y permisos |
+| T07 | Media | Onboarding usuario nuevo | Backlog | `docs/03_specs/active/SPEC-08_onboarding.md` | Depende de UX producto | Flujo primer tipo/documento | Crear spec detallado cuando se priorice |
+| T08 | Alta | Hardening multi-tenant/RAG seguro | En revisión | `docs/03_specs/active/SPEC-01_rag_seguro_multitenant.md` | MC2 lo marca done, falta evidencia local actual | Auditoría DB/código + prueba aislamiento | Auditar antes de confiar en producción |
+| T09 | Baja-Media | Dominio profesional ONAI | Requiere decisión usuario | `docs/03_specs/active/SPEC-09_dominio_produccion.md` | Elegir `onaiconsulting.cl`, `onai.cl` u otro | DNS/SSL/Traefik del dominio final | Esperar decisión de dominio |
+| T10 | Alta | Inferir desde Muestras: paralelismo 10+ docs + progreso SSE | Disponible para agente | `docs/03_specs/active/SPEC-10_inferencia_muestras_paralelo_sse.md` | Riesgo rate limits Mistral/Gemini | Semáforos ajustados + progreso visible | Auditar servicio actual y diseñar throttling seguro |
+| T11 | Baja | Go-to-market: marketing LinkedIn/Instagram | Backlog | `docs/03_specs/active/SPEC-11_go_to_market_marketing.md` | Requiere estrategia/mensajes | Calendario/contenido inicial | Postergar hasta decisión comercial |
+| T12 | Baja | Operación legal/facturación Chile | Requiere decisión usuario | `docs/03_specs/active/SPEC-12_operacion_legal_facturacion.md` | Acción humana/SII/empresa | Checklist legal-operativo | No ejecutar acciones externas sin instrucción explícita |
 
+## Harness operativo — 2026-05-27
 
-## Harness operativo — 2026-05-25
-
-- Specs separados en `03_specs/active/` y `03_specs/done/`.
-- Historial operativo agregado en `06_history/`: `SPEC_HISTORY.md`, `DECISIONS.md`, `INCIDENTS.md`, `IMPLEMENTATION_LOG.md` y ADRs.
-- Runbooks base agregados en `07_runbooks/`: deploy, local-dev, secrets y monitoring.
-- Templates base agregados en `templates/`.
-- Validador estructural: `python3 scripts/validate-harness.py`.
+- `AGENTS.md` vive en raíz del repo.
+- Harness documental vive en `docs/`: fuentes, contexto, specs, trabajo, entregables, history, runbooks, templates y scripts.
+- Specs activos viven en `docs/03_specs/active/`.
+- Historial operativo vive en `docs/06_history/`.
+- Validador estructural: `python3 docs/scripts/validate-harness.py`.
 
 ## Runbooks obligatorios según tarea
 
 | Caso | Leer |
 |---|---|
-| Deploy, rollback, CI/CD o producción | `07_runbooks/deploy.md` |
-| Desarrollo/verificación local | `07_runbooks/local-dev.md` |
-| Secretos, env vars o credenciales | `07_runbooks/secrets.md` |
-| Monitoring, health checks o alertas | `07_runbooks/monitoring.md` |
+| Deploy, rollback, CI/CD o producción | `docs/07_runbooks/deploy.md` |
+| Desarrollo/verificación local | `docs/07_runbooks/local-dev.md` |
+| Secretos, env vars o credenciales | `docs/07_runbooks/secrets.md` |
+| Monitoring, health checks o alertas | `docs/07_runbooks/monitoring.md` |
 
 ## Riesgos principales
 
-- `INFRA.md` estaba desactualizado respecto al CI/CD real.
-- MC2 contiene tareas históricas; debe sincronizarse con este plan para evitar doble verdad.
-- Subagentes de MC2 aparecen registrados pero sin actividad reciente; si se reactivan, darles specs concretos.
-- Hay ramas/features locales acumuladas; riesgo de duplicidad o merges conflictivos.
-- RLS/RAG seguro figura como done en MC2, pero debe verificarse contra DB/código antes de confiar en producción.
-- Limpieza R2 puede ser destructiva: exigir dry-run y respaldo mental/registro antes de ejecutar delete real.
+- MC2 contiene tareas históricas y tareas técnicas/comerciales mezcladas; este plan consolida lo vigente.
+- Varias tareas críticas figuran `done` en MC2, pero algunas requieren verificación contra código/DB antes de cerrarse en harness.
+- Limpieza R2 puede ser destructiva: exigir dry-run y aprobación explícita antes de `--execute`.
+- Aumentar paralelismo en inferencia puede disparar rate limits/costos si no hay semáforos y backoff.
+- Cambios de dominio pueden romper variables bakeadas, redirects, CORS o callbacks.
+- Tareas legales/comerciales no deben automatizarse como acciones externas sin confirmación de Danilo.
 
 ## Próxima sesión recomendada
 
-1. Cerrar T04: documentación CI/CD/infra.
-2. Tomar T01 con subagente frontend o Smith directo.
-3. Tomar T02 con modo dry-run, sin borrar hasta revisar output.
-4. Auditar T08 antes de seguir escalando RAG/chat.
+1. T01: cerrar UX de modo inbox/background upload.
+2. T02: preparar script R2 dry-run, sin delete real.
+3. T10: revisar paralelismo/SSE de Inferir desde Muestras.
+4. T03: health checks/alertas mínimas.
+5. T08/T05/T06: auditar tareas marcadas done por MC2 antes de cerrarlas en harness.

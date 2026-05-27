@@ -20,7 +20,7 @@ Incluye:
 - listado de objetos candidatos;
 - conteo y tamaño total;
 - opción explícita `--execute` o similar;
-- logs en archivo bajo `04_trabajo/T02_r2_cleanup/`.
+- logs en archivo bajo `docs/04_trabajo/T02_r2_cleanup/`.
 
 Excluye:
 
@@ -30,7 +30,7 @@ Excluye:
 ## Archivos/módulos probables
 
 - `backend/scripts/` o `scripts/`
-- `04_trabajo/T02_r2_cleanup/`
+- `docs/04_trabajo/T02_r2_cleanup/`
 
 ## Criterios de aceptación
 

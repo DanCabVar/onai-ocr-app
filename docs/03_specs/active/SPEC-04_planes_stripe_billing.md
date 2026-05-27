@@ -8,6 +8,12 @@
 
 Implementar monetización SaaS con planes, checkout, webhooks y enforcement de límites.
 
+## Estado conocido MC2 — 2026-05-27
+
+MC2 marca como `done` varias piezas de monetización: landing pública con pricing, Stripe checkout/webhooks, valores de planes corregidos, botón de compra y enforcement de `docTypesLimit`. Antes de cerrar el spec en harness hay que verificar código, variables y flujo Stripe test/prod.
+
+MC2 mantiene como pendiente comercial una oferta Enterprise con servidores dedicados/modelos open source; se documenta aquí como alcance comercial, no como implementación inmediata.
+
 ## Alcance inicial
 
 Incluye:
@@ -17,11 +23,12 @@ Incluye:
 - webhook para activar/cambiar suscripción;
 - límites por documentos/mes/tipos/usuarios según plan;
 - UI pricing conectada a backend;
-- estado de suscripción en settings/admin.
+- estado de suscripción en settings/admin;
+- definición de oferta Enterprise/premium con servidores dedicados y modelos open source.
 
 Excluye:
 
-- facturación chilena/SII automática, salvo decisión posterior.
+- facturación chilena/SII automática, salvo decisión posterior (`SPEC-12`).
 
 ## Archivos/módulos probables
 

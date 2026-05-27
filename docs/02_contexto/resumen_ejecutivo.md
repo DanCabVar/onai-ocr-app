@@ -30,7 +30,7 @@ Reducir trabajo manual de lectura, clasificación y tabulación documental usand
 ## Foco próximo
 
 1. Ordenar proyecto bajo harness + SDD.
-2. Sincronizar MC2 con `PLAN_MAESTRO.md`.
+2. Sincronizar MC2 con `docs/PLAN_MAESTRO.md`.
 3. Cerrar UX de batch/inbox background.
 4. Agregar monitoring/alertas.
 5. Auditar seguridad multi-tenant/RAG.
