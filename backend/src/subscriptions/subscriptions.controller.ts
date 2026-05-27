@@ -93,7 +93,7 @@ export class SubscriptionsController {
 
   /**
    * POST /api/subscriptions/checkout
-   * Convenience endpoint: creates Stripe Checkout session via SubscriptionsService.
+   * Unified billing checkout endpoint (Polar by default).
    */
   @UseGuards(JwtAuthGuard)
   @Post('checkout')
@@ -101,10 +101,10 @@ export class SubscriptionsController {
     @CurrentUser() user: User,
     @Body('plan') plan: SubscriptionPlan,
   ) {
-    const paidPlans: SubscriptionPlan[] = ['starter', 'pro', 'enterprise'];
+    const paidPlans: SubscriptionPlan[] = ['starter', 'pro'];
     if (!paidPlans.includes(plan)) {
       throw new BadRequestException(
-        `Plan inválido para checkout: "${plan}". Opciones: starter, pro, enterprise.`,
+        `Plan inválido para checkout: "${plan}". Opciones: starter, pro.`,
       );
     }
     return this.subscriptionsService.upgradePlan(user.id, user.email, plan);
@@ -112,7 +112,7 @@ export class SubscriptionsController {
 
   /**
    * POST /api/subscriptions/portal
-   * Convenience endpoint: creates Stripe Customer Portal session.
+   * Opens billing self-management session on active provider.
    */
   @UseGuards(JwtAuthGuard)
   @Post('portal')

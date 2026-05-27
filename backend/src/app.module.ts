@@ -8,32 +8,30 @@ import { DocumentTypesModule } from './document-types/document-types.module';
 import { StorageModule } from './storage/storage.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { StripeModule } from './stripe/stripe.module';
+import { PolarModule } from './polar/polar.module';
 import { UsersController } from './users/users.controller';
 import { getNestTypeOrmOptions } from './database/typeorm.config';
 
-// GoogleDriveModule removed — R2 (Cloudflare) is the storage provider.
+// GoogleDriveModule removed � R2 (Cloudflare) is the storage provider.
 
 @Module({
   controllers: [UsersController],
   imports: [
-    // Configuración de variables de entorno
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
     }),
 
-    // Configuración de TypeORM (PostgreSQL)
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: () => getNestTypeOrmOptions(__dirname),
     }),
 
-    // Módulos de la aplicación
     AuthModule,
     StorageModule,
     SubscriptionsModule,
     StripeModule,
-
+    PolarModule,
     DocumentTypesModule,
     DocumentsModule,
     ChatModule,
