@@ -42,6 +42,32 @@ function normalisePythonDictString(value: any): any {
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
+  private readonly UPLOAD_QUEUE_CONCURRENCY = 4;
+  private readonly BACKGROUND_PROCESS_CONCURRENCY = 3;
+  private readonly progressByDocumentId = new Map<number, string>();
+  private readonly progressPersistQueue = new Map<number, Promise<void>>();
+
+  private setProgress(documentId: number, step: string): void {
+    this.progressByDocumentId.set(documentId, step);
+    const previous = this.progressPersistQueue.get(documentId) || Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(async () => {
+        await this.documentRepository.update(documentId, { processingStep: step });
+      })
+      .catch((e: any) => {
+        this.logger.warn(`Could not persist processingStep for doc ${documentId}: ${e?.message || e}`);
+      });
+    this.progressPersistQueue.set(documentId, next);
+  }
+
+  private async clearProgress(documentId: number): Promise<void> {
+    this.progressByDocumentId.delete(documentId);
+    const previous = this.progressPersistQueue.get(documentId) || Promise.resolve();
+    await previous.catch(() => undefined);
+    await this.documentRepository.update(documentId, { processingStep: null }).catch(() => undefined);
+    this.progressPersistQueue.delete(documentId);
+  }
 
   constructor(
     @InjectRepository(Document)
@@ -126,43 +152,43 @@ export class DocumentsService {
    * Background processing — runs the full OCR+classify+extract pipeline
    * outside the HTTP request lifecycle. Updates document status on completion/failure.
    */
-  private processInBackground(
+  private async processInBackground(
     documentId: number,
     fileBuffer: Buffer,
     originalName: string,
     mimeType: string,
     user: User,
-  ): void {
-    // Intentionally not awaited — runs after HTTP response is sent
-    (async () => {
+  ): Promise<void> {
+    try {
+      await this.documentProcessingService.processDocument(
+        fileBuffer,
+        originalName,
+        mimeType,
+        user,
+        documentId, // pass existing doc ID so pipeline updates instead of creating
+        (step) => this.setProgress(documentId, step),
+      );
+      await this.clearProgress(documentId);
+      this.logger.log(`✅ Background processing complete: doc ${documentId}`);
+    } catch (error) {
+      this.logger.error(
+        `❌ Background processing failed for doc ${documentId}: ${error.message}`,
+        error.stack,
+      );
+      // Mark as failed in DB
       try {
-        const result = await this.documentProcessingService.processDocument(
-          fileBuffer,
-          originalName,
-          mimeType,
-          user,
-          documentId, // pass existing doc ID so pipeline updates instead of creating
-        );
-        this.logger.log(`✅ Background processing complete: doc ${documentId}`);
-      } catch (error) {
-        this.logger.error(
-          `❌ Background processing failed for doc ${documentId}: ${error.message}`,
-          error.stack,
-        );
-        // Mark as failed in DB
-        try {
-          await this.documentRepository.update(documentId, {
-            status: 'error',
-            extractedData: {
-              error: error.message,
-              failedAt: new Date().toISOString(),
-            } as any,
-          });
-        } catch (dbError) {
-          this.logger.error(`Failed to update error status: ${dbError.message}`);
-        }
+        await this.documentRepository.update(documentId, {
+          status: 'error',
+          extractedData: {
+            error: error.message,
+            failedAt: new Date().toISOString(),
+          } as any,
+        });
+        await this.clearProgress(documentId);
+      } catch (dbError) {
+        this.logger.error(`Failed to update error status: ${dbError.message}`);
       }
-    })();
+    }
   }
 
   /**
@@ -223,6 +249,9 @@ export class DocumentsService {
           inferredData: doc.inferredData,
           confidenceScore: doc.confidenceScore,
           status: doc.status,
+          processingStep: doc.status === 'processing'
+            ? (this.progressByDocumentId.get(doc.id) || doc.processingStep || 'reading_document')
+            : null,
           createdAt: doc.createdAt,
           updatedAt: doc.updatedAt,
           // Legacy fields: only expose for Google Drive documents
@@ -280,7 +309,7 @@ export class DocumentsService {
   async getBatchStatus(documentIds: number[], user: User) {
     const documents = await this.documentRepository.find({
       where: { id: In(documentIds), userId: user.id },
-      select: ['id', 'status', 'filename', 'documentTypeId', 'confidenceScore', 'updatedAt'],
+      select: ['id', 'status', 'filename', 'documentTypeId', 'confidenceScore', 'updatedAt', 'processingStep'],
       relations: ['documentType'],
     });
 
@@ -301,6 +330,9 @@ export class DocumentsService {
         id: d.id,
         filename: d.filename,
         status: d.status,
+        processingStep: d.status === 'processing'
+          ? (this.progressByDocumentId.get(d.id) || d.processingStep || 'reading_document')
+          : null,
         documentTypeName: d.documentType?.name || null,
         confidenceScore: d.confidenceScore,
       })),
@@ -313,7 +345,7 @@ export class DocumentsService {
   async getDocumentStatus(documentId: number, user: User) {
     const document = await this.documentRepository.findOne({
       where: { id: documentId, userId: user.id },
-      select: ['id', 'status', 'filename', 'documentTypeId', 'confidenceScore', 'updatedAt'],
+      select: ['id', 'status', 'filename', 'documentTypeId', 'confidenceScore', 'updatedAt', 'processingStep'],
       relations: ['documentType'],
     });
 
@@ -325,6 +357,9 @@ export class DocumentsService {
       id: document.id,
       filename: document.filename,
       status: document.status,
+      processingStep: document.status === 'processing'
+        ? (this.progressByDocumentId.get(document.id) || document.processingStep || 'reading_document')
+        : null,
       documentTypeId: document.documentTypeId,
       documentTypeName: document.documentType?.name || null,
       confidenceScore: document.confidenceScore,
@@ -365,6 +400,9 @@ export class DocumentsService {
       ocrRawText: document.ocrRawText,
       confidenceScore: document.confidenceScore,
       status: document.status,
+      processingStep: document.status === 'processing'
+        ? (this.progressByDocumentId.get(document.id) || document.processingStep || 'reading_document')
+        : null,
       createdAt: document.createdAt,
       updatedAt: document.updatedAt,
       // Legacy fields: only expose for Google Drive documents
@@ -433,48 +471,78 @@ export class DocumentsService {
    */
   async uploadAndQueueBatch(files: Express.Multer.File[], user: User): Promise<{ processing: true; total: number; documentIds: number[] }> {
     this.logger.log(`📦 Queue batch: ${files.length} archivos para usuario ${user.id}`);
-    const documentIds: number[] = [];
+    const created = await this.runWithConcurrency(files, this.UPLOAD_QUEUE_CONCURRENCY, async (file) => {
+      const storageKey = this.storageService.buildKey(user.id, 'originals', file.originalname);
+      await this.storageService.uploadFile(file.buffer, storageKey, file.mimetype);
+      const doc = this.documentRepository.create({
+        userId: user.id,
+        filename: file.originalname,
+        storageKey,
+        storageProvider: 'r2',
+        status: 'processing',
+      });
+      await this.documentRepository.save(doc);
+      this.setProgress(doc.id, 'upload_received');
+      return { file, docId: doc.id };
+    });
 
-    for (const file of files) {
-      try {
-        const storageKey = this.storageService.buildKey(user.id, 'originals', file.originalname);
-        await this.storageService.uploadFile(file.buffer, storageKey, file.mimetype);
-        const doc = this.documentRepository.create({
-          userId: user.id,
-          filename: file.originalname,
-          storageKey,
-          storageProvider: 'r2',
-          status: 'processing',
-        });
-        await this.documentRepository.save(doc);
-        documentIds.push(doc.id);
-      } catch (e: any) {
-        this.logger.warn(`Upload failed for ${file.originalname}: ${e.message}`);
+    const uploaded: Array<{ file: Express.Multer.File; docId: number }> = [];
+    for (let i = 0; i < created.length; i++) {
+      const result = created[i];
+      if (result.status === 'fulfilled') {
+        uploaded.push(result.value);
+      } else {
+        this.logger.warn(`Upload failed for ${files[i]?.originalname}: ${result.reason?.message || 'unknown error'}`);
       }
     }
 
-    // Process OCR + classification in background
-    this.processBatchInBackground(files, user);
+    // Process OCR + classification in background (updates the pre-created docs)
+    this.processUploadedDocsInBackground(uploaded, user);
 
-    return { processing: true, total: documentIds.length, documentIds };
+    return { processing: true, total: uploaded.length, documentIds: uploaded.map((i) => i.docId) };
   }
 
   /**
-   * Background batch processing.
+   * Run items in fixed-size chunks and keep all results.
    */
-  processBatchInBackground(
-    files: Express.Multer.File[],
+  private async runWithConcurrency<T, R>(
+    items: T[],
+    concurrency: number,
+    fn: (item: T) => Promise<R>,
+  ): Promise<PromiseSettledResult<R>[]> {
+    const results: PromiseSettledResult<R>[] = [];
+    for (let i = 0; i < items.length; i += concurrency) {
+      const chunk = items.slice(i, i + concurrency);
+      const chunkResults = await Promise.allSettled(chunk.map(fn));
+      results.push(...chunkResults);
+    }
+    return results;
+  }
+
+  /**
+   * Background processing for already-uploaded files.
+   * Uses the existing document IDs to avoid duplicate DB records.
+   */
+  private processUploadedDocsInBackground(
+    uploaded: Array<{ file: Express.Multer.File; docId: number }>,
     user: User,
   ): void {
     (async () => {
-      try {
-        await this.documentProcessingService.processBatch(files, user);
-        this.logger.log(`✅ Background batch processing complete: ${files.length} files`);
-      } catch (error) {
-        this.logger.error(
-          `❌ Background batch processing failed: ${error.message}`,
-          error.stack,
-        );
+      const results = await this.runWithConcurrency(
+        uploaded,
+        this.BACKGROUND_PROCESS_CONCURRENCY,
+        async ({ file, docId }) => {
+          await this.processInBackground(docId, file.buffer, file.originalname, file.mimetype, user);
+          return docId;
+        },
+      );
+
+      const ok = results.filter((r) => r.status === 'fulfilled').length;
+      const failed = results.length - ok;
+      if (failed > 0) {
+        this.logger.warn(`Background queued processing completed with errors: ${ok} ok, ${failed} failed`);
+      } else {
+        this.logger.log(`✅ Background queued processing complete: ${ok} files`);
       }
     })();
   }

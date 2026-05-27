@@ -43,15 +43,15 @@ const MAX_SIZE = 10 * 1024 * 1024 // 10MB
 
 const STATUS_CONFIG: Record<FileItemStatus, { icon: string; label: string; color: string }> = {
   queued: { icon: "⏳", label: "En cola", color: "text-muted-foreground" },
-  uploading: { icon: "🔄", label: "Subiendo...", color: "text-blue-500" },
-  ocr: { icon: "📄", label: "Extrayendo texto (OCR)...", color: "text-purple-500" },
-  classifying: { icon: "🧠", label: "Clasificando tipo...", color: "text-orange-500" },
-  extracting: { icon: "⚙️", label: "Extrayendo campos...", color: "text-blue-500" },
-  homologating: { icon: "🔗", label: "Homologando tipos...", color: "text-amber-500" },
-  saving: { icon: "💾", label: "Guardando...", color: "text-green-600" },
+  uploading: { icon: "🔄", label: "Subiendo archivo", color: "text-blue-500" },
+  ocr: { icon: "📄", label: "Leyendo documento", color: "text-purple-500" },
+  classifying: { icon: "🧠", label: "Identificando tipo", color: "text-orange-500" },
+  extracting: { icon: "⚙️", label: "Analizando contenido", color: "text-blue-500" },
+  homologating: { icon: "🔗", label: "Unificando tipo", color: "text-amber-500" },
+  saving: { icon: "💾", label: "Guardando resultado", color: "text-green-600" },
   completed: { icon: "✅", label: "Completado", color: "text-green-600" },
-  pending_confirmation: { icon: "⚠️", label: "Requiere confirmación", color: "text-yellow-600" },
-  error: { icon: "❌", label: "Error", color: "text-red-600" },
+  pending_confirmation: { icon: "⚠️", label: "Requiere tu revisión", color: "text-yellow-600" },
+  error: { icon: "❌", label: "No se pudo procesar", color: "text-red-600" },
 }
 
 export default function UploadDocumentModal({ open, onOpenChange, onUploadSuccess }: UploadDocumentModalProps) {
@@ -72,6 +72,24 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
   const [allExistingTypes, setAllExistingTypes] = useState<{id:number;name:string}[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+  const mapProcessingStepToStatus = useCallback((doc: any): FileItemStatus => {
+    if (doc?.status === "completed") return "completed"
+    if (doc?.status === "pending_confirmation") return "pending_confirmation"
+    if (doc?.status === "error") return "error"
+
+    switch (doc?.processingStep) {
+      case "reading_document":
+        return "ocr"
+      case "identifying_type":
+        return "classifying"
+      case "analyzing_content":
+        return "extracting"
+      case "saving_result":
+        return "saving"
+      default:
+        return "uploading"
+    }
+  }, [])
 
   const validateFile = useCallback((file: File): boolean => {
     if (!ALLOWED_TYPES.includes(file.type)) {
@@ -199,6 +217,14 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
               await new Promise(r => setTimeout(r, 2000))
               try {
                 const status = await documentsService.getBatchStatus(documentIds)
+                setFileItems(prev => prev.map(item => {
+                  const doc = status.documents.find((d: any) => d.filename === item.file.name)
+                  if (!doc) return item
+                  return {
+                    ...item,
+                    status: mapProcessingStepToStatus(doc),
+                  }
+                }))
                 if (status.allDone) {
                   // Update file items with real status
                   setFileItems(prev => prev.map(item => {

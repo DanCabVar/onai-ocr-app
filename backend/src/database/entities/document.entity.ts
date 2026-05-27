@@ -51,6 +51,9 @@ export class Document {
   @Column({ default: 'processing' })
   status: string;
 
+  @Column({ name: 'processing_step', type: 'varchar', length: 50, nullable: true })
+  processingStep: string | null;
+
   @Index()
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
