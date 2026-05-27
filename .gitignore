@@ -50,6 +50,10 @@ frontend/out/
 coverage/
 .nyc_output/
 *.test.js.snap
+playwright-report/
+test-results/
+frontend/playwright-report/
+frontend/test-results/
 
 # ===================================
 # IDEs y Editores
