@@ -98,12 +98,14 @@ export class StorageService implements OnModuleInit {
     buffer: Buffer,
     key: string,
     mimeType: string,
+    bucketOverride?: string,
   ): Promise<UploadResult> {
+    const bucket = bucketOverride || this.bucket;
     this.logger.log(`Uploading ${key} (${(buffer.length / 1024).toFixed(1)} KB)`);
 
     await this.s3Client.send(
       new PutObjectCommand({
-        Bucket: this.bucket,
+        Bucket: bucket,
         Key: key,
         Body: buffer,
         ContentType: mimeType,
@@ -114,7 +116,7 @@ export class StorageService implements OnModuleInit {
 
     return {
       key,
-      bucket: this.bucket,
+      bucket,
       size: buffer.length,
     };
   }
@@ -221,6 +223,26 @@ export class StorageService implements OnModuleInit {
       size: obj.Size,
       lastModified: obj.LastModified,
       filename: obj.Key.split('/').pop(),
+    }));
+  }
+
+  async listByPrefix(prefix: string): Promise<StorageFile[]> {
+    this.logger.log(`Listing files with prefix: ${prefix}`);
+
+    const response = await this.s3Client.send(
+      new ListObjectsV2Command({
+        Bucket: this.bucket,
+        Prefix: prefix,
+      }),
+    );
+
+    if (!response.Contents) return [];
+
+    return response.Contents.map((obj) => ({
+      key: obj.Key,
+      size: obj.Size,
+      lastModified: obj.LastModified,
+      filename: obj.Key.split('/').pop() || '',
     }));
   }
 }

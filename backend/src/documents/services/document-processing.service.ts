@@ -17,6 +17,7 @@ import { PipelineMetricsService, PipelineMetrics } from '../../ai-services/pipel
 import { StorageService } from '../../storage/storage.service';
 import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 import { User } from '../../database/entities/user.entity';
+import { MarkdownBackupService } from './markdown-backup.service';
 
 export interface ProcessingResult {
   document: Document;
@@ -80,6 +81,7 @@ export class DocumentProcessingService {
     private readonly metrics: PipelineMetricsService,
     private readonly storageService: StorageService,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly markdownBackupService: MarkdownBackupService,
   ) {}
 
   private async getAvailableTypes(userId: number): Promise<DocumentType[]> {
@@ -353,6 +355,7 @@ export class DocumentProcessingService {
         await this.documentRepository.save(document);
       }
       this.metrics.endStage(dbMetric);
+      await this.tryBackupMarkdown(document, user.id, documentType.name);
 
       // ─── Finalize metrics ───
       this.metrics.finalize(ctx, document.id);
@@ -726,7 +729,7 @@ export class DocumentProcessingService {
         userId: user.id,
         documentTypeId: matchedType!.id,
         filename: item.file.originalname,
-        storageKey: item.storageKey,
+        storageKey: typedKey,
         storageProvider: 'r2',
         ocrRawText: item.ocrText,
         extractedData,
@@ -735,6 +738,7 @@ export class DocumentProcessingService {
         status: 'completed',
       });
       await this.documentRepository.save(document);
+      await this.tryBackupMarkdown(document, user.id, matchedType!.name);
       await this.subscriptionsService.incrementUsage(user.id);
 
       return {
@@ -994,6 +998,7 @@ If no merges needed, return {"merges":[]}. JSON only.`;
       document.extractedData = this.ensureValidJsonData(extractedData);
       document.status = 'completed';
       await this.documentRepository.save(document);
+      await this.tryBackupMarkdown(document, user.id, existingType.name);
       await this.subscriptionsService.incrementUsage(user.id);
 
       return {
@@ -1087,6 +1092,7 @@ If no merges needed, return {"merges":[]}. JSON only.`;
     document.extractedData = this.ensureValidJsonData(extractedData);
     document.status = 'completed';
     await this.documentRepository.save(document);
+    await this.tryBackupMarkdown(document, user.id, finalTypeName);
 
     await this.subscriptionsService.incrementUsage(user.id);
 
@@ -1105,6 +1111,20 @@ If no merges needed, return {"merges":[]}. JSON only.`;
         name: documentType.name,
       },
     };
+  }
+
+  private async tryBackupMarkdown(document: Document, tenantId: number, documentTypeName?: string): Promise<void> {
+    try {
+      await this.markdownBackupService.backupDocument({
+        document,
+        tenantId,
+        documentTypeName: documentTypeName || null,
+      });
+    } catch (error: any) {
+      this.logger.warn(
+        `Markdown backup warning (non-blocking): doc=${document?.id} tenant=${tenantId} error=${error?.message || 'unknown'}`,
+      );
+    }
   }
 
   /**

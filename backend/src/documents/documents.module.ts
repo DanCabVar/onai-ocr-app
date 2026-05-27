@@ -4,6 +4,7 @@ import { HttpModule } from '@nestjs/axios';
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
 import { DocumentProcessingService } from './services/document-processing.service';
+import { MarkdownBackupService } from './services/markdown-backup.service';
 import { Document } from '../database/entities/document.entity';
 import { DocumentType } from '../database/entities/document-type.entity';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
@@ -23,7 +24,7 @@ import { StorageModule } from '../storage/storage.module';
     StorageModule,
   ],
   controllers: [DocumentsController],
-  providers: [DocumentsService, DocumentProcessingService, GeminiClassifierService],
+  providers: [DocumentsService, DocumentProcessingService, GeminiClassifierService, MarkdownBackupService],
   exports: [DocumentsService, DocumentProcessingService],
 })
 export class DocumentsModule {}
