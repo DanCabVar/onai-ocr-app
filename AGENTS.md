@@ -10,7 +10,7 @@ El objetivo del harness es que Smith, MC2 y subagentes puedan trabajar el proyec
 
 Antes de trabajar cualquier tarea, leer en este orden:
 
-1. `docs/AGENTS.md`
+1. `AGENTS.md`
 2. `docs/PLAN_MAESTRO.md`
 3. `docs/06_history/SPEC_HISTORY.md` para evitar retrabajo
 4. `docs/02_contexto/resumen_ejecutivo.md`
