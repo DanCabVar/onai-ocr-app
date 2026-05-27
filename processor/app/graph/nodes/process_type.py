@@ -84,7 +84,7 @@ async def _process_new_type(
     drive_folder = await drive_service.create_folder(type_name)
 
     # ---- Step 3: Save type to DB (within transaction) ----
-    logger.info(f"  Saving type to database...")
+    logger.info("  Saving type to database...")
     db_type = await db_service.create_document_type(
         user_id=user_id,
         name=type_name,
@@ -158,11 +158,11 @@ async def _process_existing_type(
     logger.info(f"Processing EXISTING type: '{type_name}' (ID: {group.existing_type_id})")
 
     if not upload_samples:
-        logger.info(f"  Skipping upload (uploadSamples=false)")
+        logger.info("  Skipping upload (uploadSamples=false)")
         return CreatedTypeResult(
             id=group.existing_type_id,
             name=type_name,
-            description=f"Tipo existente (sin documentos subidos)",
+            description="Tipo existente (sin documentos subidos)",
             field_count=0,
             sample_document_count=0,
             google_drive_folder_id=group.existing_drive_folder_id or "",

@@ -8,13 +8,11 @@ Exposes endpoints to:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
 import shutil
 import tempfile
-import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -232,7 +230,7 @@ async def process_batch_stream(
                 )
                 yield f"event: complete\ndata: {response_data.model_dump_json()}\n\n"
             else:
-                yield f'event: error\ndata: {{"error": "No se obtuvo resultado del pipeline"}}\n\n'
+                yield 'event: error\ndata: {"error": "No se obtuvo resultado del pipeline"}\n\n'
 
         except Exception as e:
             logger.error(f"Stream pipeline failed: {e}", exc_info=True)
