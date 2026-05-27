@@ -709,7 +709,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Chat flotante - burbuja en esquina inferior derecha (kept from original) */}
-      <div className="fixed bottom-4 right-4 z-50" style={{ maxWidth: 'calc(100vw - 2rem)', maxHeight: 'calc(100vh - 2rem)' }}">
+      <div className="fixed bottom-4 right-4 z-50" style={{ maxWidth: 'calc(100vw - 2rem)', maxHeight: 'calc(100vh - 2rem)' }}>
         {!messages.length && !isProcessing ? (
           <Button
             className="!h-16 !w-16 !p-0 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center justify-center"
