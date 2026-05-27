@@ -5,8 +5,8 @@
 # Etapa 1: Build
 FROM node:20-alpine AS builder
 
-# Instalar pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Instalar pnpm (version fijada para compatibilidad con lockfile)
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
 WORKDIR /app
 
@@ -28,8 +28,8 @@ RUN pnpm run build
 # Etapa 2: Producción
 FROM node:20-alpine AS production
 
-# Instalar pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Instalar pnpm (version fijada para compatibilidad con lockfile)
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
 WORKDIR /app
 

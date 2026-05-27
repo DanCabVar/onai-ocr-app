@@ -1,6 +1,8 @@
 name: CI - Lint & Build Check
 
 on:
+  push:
+    branches: [deploy/all-features]
   pull_request:
     branches: [dev, qa, main]
 
