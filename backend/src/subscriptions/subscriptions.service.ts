@@ -7,12 +7,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
   Subscription,
+  BillingProvider,
+  BillingStatus,
   SubscriptionPlan,
   PLAN_LIMITS,
   PLAN_PRICES,
 } from '../database/entities/subscription.entity';
 import { Document } from '../database/entities/document.entity';
-import { StripeService } from '../stripe/stripe.service';
+import { BillingService } from '../billing/billing.service';
 
 @Injectable()
 export class SubscriptionsService {
@@ -23,7 +25,7 @@ export class SubscriptionsService {
     private readonly subscriptionRepository: Repository<Subscription>,
     @InjectRepository(Document)
     private readonly documentRepository: Repository<Document>,
-    private readonly stripeService: StripeService,
+    private readonly billingService: BillingService,
   ) {}
 
   /**
@@ -185,10 +187,18 @@ export class SubscriptionsService {
     userId: number,
     email: string,
     planSlug: SubscriptionPlan,
-  ): Promise<{ url: string; sessionId: string }> {
-    // Ensure subscription record exists
-    await this.getOrCreate(userId);
-    return this.stripeService.createCheckoutSession(userId, email, planSlug);
+  ): Promise<{ url: string; provider: BillingProvider; sessionId?: string }> {
+    const sub = await this.getOrCreate(userId);
+    const result = await this.billingService.createCheckoutSession(
+      sub,
+      userId,
+      email,
+      planSlug,
+    );
+
+    sub.billingProvider = result.provider;
+    await this.subscriptionRepository.save(sub);
+    return result;
   }
 
   /**
@@ -196,16 +206,19 @@ export class SubscriptionsService {
    * Fetches latest data from Stripe API and updates local DB.
    */
   async syncFromStripe(stripeSubscriptionId: string): Promise<Subscription> {
-    return this.stripeService.syncFromStripe(stripeSubscriptionId);
+    throw new Error(
+      `syncFromStripe está deprecated en SubscriptionsService (id: ${stripeSubscriptionId}). Usa StripeService directo para reconciliación legacy.`,
+    );
   }
 
   /**
    * Get Stripe Customer Portal URL for a user to manage their billing.
    */
-  async getPortalUrl(userId: number): Promise<{ url: string }> {
-    // Ensure subscription record exists
-    await this.getOrCreate(userId);
-    return this.stripeService.createCustomerPortalSession(userId);
+  async getPortalUrl(
+    userId: number,
+  ): Promise<{ url: string; provider: BillingProvider }> {
+    const sub = await this.getOrCreate(userId);
+    return this.billingService.createPortalSession(sub, userId);
   }
 
   // ─── Status ───────────────────────────────────────────────────────
@@ -223,6 +236,9 @@ export class SubscriptionsService {
     price: number | null;
     periodEnd: Date | null;
     active: boolean;
+    billingProvider: BillingProvider;
+    canSelfManageBilling: boolean;
+    billingStatus: BillingStatus | null;
   }> {
     const sub = await this.getOrCreate(userId);
     const limits = PLAN_LIMITS[sub.plan];
@@ -239,6 +255,9 @@ export class SubscriptionsService {
       price: PLAN_PRICES[sub.plan],
       periodEnd: sub.periodEnd,
       active: sub.active,
+      billingProvider: sub.billingProvider || 'polar',
+      canSelfManageBilling: this.billingService.canSelfManageBilling(sub),
+      billingStatus: sub.billingStatus || (sub.active ? 'active' : 'incomplete'),
     };
   }
 

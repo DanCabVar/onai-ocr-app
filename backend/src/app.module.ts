@@ -8,11 +8,13 @@ import { DocumentTypesModule } from './document-types/document-types.module';
 import { StorageModule } from './storage/storage.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { StripeModule } from './stripe/stripe.module';
+import { PolarModule } from './polar/polar.module';
 import { UsersController } from './users/users.controller';
 import { User } from './database/entities/user.entity';
 import { Document } from './database/entities/document.entity';
 import { DocumentType } from './database/entities/document-type.entity';
 import { Subscription } from './database/entities/subscription.entity';
+import { BillingWebhookEvent } from './database/entities/billing-webhook-event.entity';
 
 // GoogleDriveModule removed — R2 (Cloudflare) is the storage provider.
 
@@ -36,7 +38,7 @@ import { Subscription } from './database/entities/subscription.entity';
         username: configService.get<string>('DATABASE_USER'),
         password: configService.get<string>('DATABASE_PASSWORD'),
         database: configService.get<string>('DATABASE_NAME'),
-        entities: [User, Document, DocumentType, Subscription],
+        entities: [User, Document, DocumentType, Subscription, BillingWebhookEvent],
         synchronize: true, // ⚠️ Solo para desarrollo, desactivar en producción
         logging: false,
       }),
@@ -47,6 +49,7 @@ import { Subscription } from './database/entities/subscription.entity';
     StorageModule,
     SubscriptionsModule,
     StripeModule,
+    PolarModule,
 
     DocumentTypesModule,
     DocumentsModule,
