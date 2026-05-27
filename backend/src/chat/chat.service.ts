@@ -10,6 +10,7 @@ export interface ChatQueryResult {
   query?: string;
   data?: Record<string, any>[];
   sources?: RetrievalSource[];
+  retrievalStrategy?: 'markdown_graph' | 'sql_rag';
 }
 
 @Injectable()
@@ -28,6 +29,7 @@ export class ChatService {
   async getQueryResponse(
     queryDto: QueryDto,
     user: User,
+    includeDebug = false,
   ): Promise<ChatQueryResult> {
     const { query } = queryDto;
     this.logger.log(`Chat query from user ${user.id}: "${query}"`);
@@ -38,10 +40,14 @@ export class ChatService {
         user.id,
       );
       if (markdownResult) {
-        return {
+        const response: ChatQueryResult = {
           answer: markdownResult.answer,
-          sources: markdownResult.sources,
+          retrievalStrategy: 'markdown_graph',
         };
+        if (includeDebug) {
+          response.sources = markdownResult.sources;
+        }
+        return response;
       }
     } catch (error) {
       this.logger.warn(
@@ -56,8 +62,14 @@ export class ChatService {
 
     // Return only the answer — do NOT expose the raw SQL query or raw data rows
     // to avoid leaking internal DB schema to clients.
-    return {
+    const response: ChatQueryResult = {
       answer: result.answer,
+      retrievalStrategy: 'sql_rag',
     };
+    if (includeDebug && result.data) {
+      response.data = result.data;
+      response.query = result.query;
+    }
+    return response;
   }
 }

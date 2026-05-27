@@ -18,4 +18,13 @@ export class ChatController {
   ): Promise<ChatQueryResult> {
     return this.chatService.getQueryResponse(queryDto, user);
   }
+
+  @Post('query-debug')
+  @HttpCode(200)
+  async queryDebug(
+    @Body() queryDto: QueryDto,
+    @CurrentUser() user: User,
+  ): Promise<ChatQueryResult> {
+    return this.chatService.getQueryResponse(queryDto, user, true);
+  }
 }
