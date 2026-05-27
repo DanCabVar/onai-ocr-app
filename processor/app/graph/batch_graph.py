@@ -44,7 +44,6 @@ import logging
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
-from app.config import settings
 from app.models.state import (
     BatchState,
     ClassifyDocState,

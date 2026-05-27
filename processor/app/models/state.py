@@ -10,8 +10,6 @@ import operator
 from typing import Annotated, TypedDict
 
 from app.models.schemas import (
-    ConsolidatedField,
-    ConsolidatedSchema,
     CreatedTypeResult,
     DocumentClassification,
     TypeGroup,
