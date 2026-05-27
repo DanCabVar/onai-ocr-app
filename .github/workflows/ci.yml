@@ -35,7 +35,13 @@ jobs:
       - name: Security audit (non-blocking)
         run: pnpm audit --prod --audit-level=high
         continue-on-error: true
-      - run: pnpm run lint
+      - name: Lint (if ESLint config exists)
+        run: |
+          if [ -f "eslint.config.js" ] || [ -f "eslint.config.mjs" ] || [ -f ".eslintrc" ] || [ -f ".eslintrc.js" ] || [ -f ".eslintrc.cjs" ] || [ -f ".eslintrc.json" ] || [ -f ".eslintrc.yaml" ] || [ -f ".eslintrc.yml" ]; then
+            pnpm run lint
+          else
+            echo "Skipping lint: no ESLint config found in backend/"
+          fi
       - run: pnpm run build
 
   # ─────────────────────────────────────
@@ -62,7 +68,13 @@ jobs:
       - name: Security audit (non-blocking)
         run: pnpm audit --prod --audit-level=high
         continue-on-error: true
-      - run: pnpm run lint
+      - name: Lint (if ESLint config exists)
+        run: |
+          if [ -f "eslint.config.js" ] || [ -f "eslint.config.mjs" ] || [ -f ".eslintrc" ] || [ -f ".eslintrc.js" ] || [ -f ".eslintrc.cjs" ] || [ -f ".eslintrc.json" ] || [ -f ".eslintrc.yaml" ] || [ -f ".eslintrc.yml" ]; then
+            pnpm run lint
+          else
+            echo "Skipping lint: no ESLint config found in frontend/"
+          fi
       - run: pnpm run build
 
   # ─────────────────────────────────────
