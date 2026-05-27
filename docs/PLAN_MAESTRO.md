@@ -72,6 +72,8 @@ Regla: cualquier tarea marcada done en MC2 debe verificarse contra código/produ
 | T10 | Alta | Inferir desde Muestras: paralelismo 10+ docs + progreso SSE | Disponible para agente | `docs/03_specs/active/SPEC-10_inferencia_muestras_paralelo_sse.md` | Riesgo rate limits Mistral/Gemini | Semáforos ajustados + progreso visible | Auditar servicio actual y diseñar throttling seguro |
 | T11 | Baja | Go-to-market: marketing LinkedIn/Instagram | Backlog | `docs/03_specs/active/SPEC-11_go_to_market_marketing.md` | Requiere estrategia/mensajes | Calendario/contenido inicial | Postergar hasta decisión comercial |
 | T12 | Baja | Operación legal/facturación Chile | Requiere decisión usuario | `docs/03_specs/active/SPEC-12_operacion_legal_facturacion.md` | Acción humana/SII/empresa | Checklist legal-operativo | No ejecutar acciones externas sin instrucción explícita |
+| T13 | Alta | Migración a pnpm + remediación inicial de dependencias | En revisión | `docs/03_specs/active/SPEC-13_migracion_pnpm.md` | Quedan vulnerabilidades residuales de stack base | CI en pnpm + reducción de vulnerabilidades + reporte T13 | Validar cierre técnico y traspasar residuales a T22 |
+| T22 | Alta | Remediación de vulnerabilidades residuales post-SPEC-13 | Disponible para agente | `docs/03_specs/active/SPEC-22_remediacion_vulnerabilidades_residuales.md` | Puede requerir upgrades estructurales Nest/Express/TypeORM | Plan y ejecución de remediación residual con evidencia | Priorizar hallazgos high restantes y definir mitigaciones |
 
 ## Harness operativo — 2026-05-27
 
@@ -94,6 +96,7 @@ Regla: cualquier tarea marcada done en MC2 debe verificarse contra código/produ
 
 - MC2 contiene tareas históricas y tareas técnicas/comerciales mezcladas; este plan consolida lo vigente.
 - Varias tareas críticas figuran `done` en MC2, pero algunas requieren verificación contra código/DB antes de cerrarse en harness.
+- T13 está en revisión: la migración a pnpm quedó aplicada, pero vulnerabilidades residuales pasan a seguimiento activo en T22.
 - Limpieza R2 puede ser destructiva: exigir dry-run y aprobación explícita antes de `--execute`.
 - Aumentar paralelismo en inferencia puede disparar rate limits/costos si no hay semáforos y backoff.
 - Cambios de dominio pueden romper variables bakeadas, redirects, CORS o callbacks.
