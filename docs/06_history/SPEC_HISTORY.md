@@ -15,6 +15,7 @@
 | T10 / SPEC-10 | `03_specs/active/SPEC-10_inferencia_muestras_paralelo_sse.md` | Disponible | 2026-05-27 | Nueva tarea MC2 pendiente: subir paralelismo y agregar progress events SSE. |
 | T11 / SPEC-11 | `03_specs/active/SPEC-11_go_to_market_marketing.md` | Backlog | 2026-05-27 | Nueva tarea MC2 pendiente comercial: contenido LinkedIn/Instagram. |
 | T12 / SPEC-12 | `03_specs/active/SPEC-12_operacion_legal_facturacion.md` | Requiere decisiÃ³n usuario | 2026-05-27 | Nueva tarea MC2 pendiente: crear empresa/facturaciÃ³n; requiere acciÃ³n humana. |
+| T14 / SPEC-14 | `03_specs/active/SPEC-14_carga_paralela_archivos.md` | En trabajo por agente | 2026-05-27 | Rama de implementaciÃ³n activa `codex/spec-14-carga-paralela`; cambios funcionales quedan en esa rama y `deploy/all-features` solo actualiza estado documental. |
 | T15 / SPEC-15 | `03_specs/active/SPEC-15_agente_qa_playwright.md` | Bloqueada por insumo | 2026-05-27 | Standby por falta de secrets E2E para validar flujo autenticado completo en CI; queda pendiente corrida con 5 casos y artifacts. |
 | T16 / SPEC-16 | `03_specs/active/SPEC-16_test_obligatorio_por_spec.md` | Disponible | 2026-05-27 | Spec activo incorporado a tablero canonico; pendiente estandarizar politica de pruebas por spec. |
 | T17 / SPEC-17 | `03_specs/active/SPEC-17_integracion_pagos_polar_sh.md` | Requiere decision usuario | 2026-05-27 | Spec activo incorporado a tablero canonico; definir estrategia Stripe vs Polar antes de implementar. |
