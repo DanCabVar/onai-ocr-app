@@ -59,6 +59,10 @@ export class StorageService implements OnModuleInit {
     this.logger.log(`R2 Storage initialized — bucket: ${this.bucket}, endpoint: ${endpoint}`);
   }
 
+  isConfigured(): boolean {
+    return Boolean(this.s3Client && this.bucket);
+  }
+
   /**
    * Build the object key following multi-tenant convention:
    *   {userId}/originals/{filename}
@@ -204,6 +208,31 @@ export class StorageService implements OnModuleInit {
     const prefix = folder ? `${userId}/${folder}/` : `${userId}/`;
 
     this.logger.log(`Listing files with prefix: ${prefix}`);
+
+    const response = await this.s3Client.send(
+      new ListObjectsV2Command({
+        Bucket: this.bucket,
+        Prefix: prefix,
+      }),
+    );
+
+    if (!response.Contents) {
+      return [];
+    }
+
+    return response.Contents.map((obj) => ({
+      key: obj.Key,
+      size: obj.Size,
+      lastModified: obj.LastModified,
+      filename: obj.Key.split('/').pop(),
+    }));
+  }
+
+  /**
+   * List files using an arbitrary prefix (used by non-document artifacts like Markdown backups).
+   */
+  async listByPrefix(prefix: string): Promise<StorageFile[]> {
+    this.logger.log(`Listing files by prefix: ${prefix}`);
 
     const response = await this.s3Client.send(
       new ListObjectsV2Command({

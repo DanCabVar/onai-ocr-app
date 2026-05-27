@@ -2,18 +2,24 @@ import { Injectable, Logger } from '@nestjs/common';
 import { SqlRagService, SqlRagResult } from './sql-rag.service';
 import { QueryDto } from './dto/query.dto';
 import { User } from '../database/entities/user.entity';
+import { RetrievalSource } from './markdown-graph-rag/types';
+import { GraphRetrievalService } from './markdown-graph-rag/graph-retrieval.service';
 
 export interface ChatQueryResult {
   answer: string;
   query?: string;
   data?: Record<string, any>[];
+  sources?: RetrievalSource[];
 }
 
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
 
-  constructor(private readonly sqlRagService: SqlRagService) {}
+  constructor(
+    private readonly sqlRagService: SqlRagService,
+    private readonly graphRetrievalService: GraphRetrievalService,
+  ) {}
 
   /**
    * Process a natural language question about the user's documents.
@@ -25,6 +31,23 @@ export class ChatService {
   ): Promise<ChatQueryResult> {
     const { query } = queryDto;
     this.logger.log(`Chat query from user ${user.id}: "${query}"`);
+
+    try {
+      const markdownResult = await this.graphRetrievalService.retrieveAndAnswer(
+        query,
+        user.id,
+      );
+      if (markdownResult) {
+        return {
+          answer: markdownResult.answer,
+          sources: markdownResult.sources,
+        };
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Markdown graph retrieval unavailable, fallback to SQL RAG: ${error.message}`,
+      );
+    }
 
     const result: SqlRagResult = await this.sqlRagService.query(
       query,
