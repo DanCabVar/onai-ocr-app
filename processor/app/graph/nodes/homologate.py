@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 from app.models.schemas import DocumentClassification
-from app.models.state import BatchState, FileInfo, TypeGroup
+from app.models.state import BatchState, TypeGroup
 from app.services import db_service, gemini_service
 
 logger = logging.getLogger(__name__)
@@ -20,10 +20,6 @@ logger = logging.getLogger(__name__)
 async def homologate_and_group(state: BatchState) -> dict:
     """Merge similar type names and create TypeGroups."""
     classifications = state["classifications"]
-    files = state["files"]
-
-    # Build filename -> FileInfo lookup
-    file_map: dict[str, FileInfo] = {f["filename"]: f for f in files}
 
     # Fetch existing types from DB
     existing_types = await db_service.get_existing_document_types()

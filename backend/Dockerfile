@@ -6,17 +6,19 @@
 FROM node:20-alpine AS builder
 
 # Instalar pnpm y npm
-RUN corepack enable && corepack prepare pnpm@latest --activate && npm install -g npm@latest
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate && npm install -g npm@latest
+
+# Dependencias de compilación nativas (bcrypt en alpine)
+RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 
 # Copiar archivos de dependencias
 COPY package.json pnpm-lock.yaml .npmrc ./
 
-# Instalar dependencias
+# Instalar dependencias y reconstruir bcrypt desde fuente para Alpine
 RUN pnpm install --frozen-lockfile && \
-    cd node_modules/.pnpm/bcrypt@5.1.1/node_modules/bcrypt && \
-    npm run install --unsafe-perm
+    npm rebuild bcrypt --build-from-source --unsafe-perm
 
 # Copiar código fuente
 COPY . .
@@ -28,7 +30,7 @@ RUN pnpm run build
 FROM node:20-alpine AS production
 
 # Instalar pnpm, npm, wget para healthcheck y herramientas de build necesarias para bcrypt
-RUN corepack enable && corepack prepare pnpm@latest --activate && \
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate && \
     npm install -g npm@latest && \
     apk add --no-cache wget python3 make g++
 
@@ -37,10 +39,9 @@ WORKDIR /app
 # Copiar package.json y .npmrc
 COPY package.json pnpm-lock.yaml .npmrc ./
 
-# Instalar dependencias de producción y reconstruir bcrypt
+# Instalar dependencias de producción y reconstruir bcrypt desde fuente para Alpine
 RUN pnpm install --frozen-lockfile --prod && \
-    cd node_modules/.pnpm/bcrypt@5.1.1/node_modules/bcrypt && \
-    npm run install --unsafe-perm
+    npm rebuild bcrypt --build-from-source --unsafe-perm
 
 # Copiar el build desde la etapa anterior
 COPY --from=builder /app/dist ./dist
