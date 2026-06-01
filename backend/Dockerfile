@@ -16,9 +16,9 @@ WORKDIR /app
 # Copiar archivos de dependencias
 COPY package.json pnpm-lock.yaml .npmrc ./
 
-# Instalar dependencias y reconstruir bcrypt sin rutas hardcodeadas
+# Instalar dependencias y reconstruir bcrypt desde fuente para Alpine
 RUN pnpm install --frozen-lockfile && \
-    pnpm rebuild bcrypt
+    npm rebuild bcrypt --build-from-source --unsafe-perm
 
 # Copiar código fuente
 COPY . .
@@ -39,9 +39,9 @@ WORKDIR /app
 # Copiar package.json y .npmrc
 COPY package.json pnpm-lock.yaml .npmrc ./
 
-# Instalar dependencias de producción y reconstruir bcrypt
+# Instalar dependencias de producción y reconstruir bcrypt desde fuente para Alpine
 RUN pnpm install --frozen-lockfile --prod && \
-    pnpm rebuild bcrypt
+    npm rebuild bcrypt --build-from-source --unsafe-perm
 
 # Copiar el build desde la etapa anterior
 COPY --from=builder /app/dist ./dist
