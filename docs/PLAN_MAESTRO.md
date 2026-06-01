@@ -86,6 +86,8 @@ Regla: cualquier tarea marcada done en MC2 debe verificarse contra cÃ³digo/pro
 | T23 | Alta | Estandarizar configuración ESLint (frontend + backend) | En revisión | `docs/03_specs/active/SPEC-23_estandarizar_eslint_config.md` | Pendiente validación final lint+build en ambos proyectos y evidencia CI | Config ESLint versionada + CI ejecutando lint obligatorio en ambos proyectos | Consolidar evidencia final y preparar merge a rama deploy |
 | T24 | Alta | RAG híbrido sobre Markdown grafo (Obsidian-ready) | En revisión | `docs/03_specs/active/SPEC-24_rag_hibrido_markdown_grafo_obsidian.md` | Depende de outputs de SPEC-21 y control estricto de aislamiento por tenant | Retrieval híbrido con trazabilidad de fuentes desde respaldos Markdown | Validar E2E tenant real y preparar merge desde `codex/spec-24-rag-hibrido-markdown-grafo-obsidian`; evidencia en `docs/04_trabajo/T24_rag_hibrido_markdown_grafo_obsidian/README.md` |
 | T25 | Alta | Plan PRD por fases para cierre sin retrabajo | Disponible para agente | `docs/03_specs/active/SPEC-25_plan_prd_fases_cierre_sin_retrabajo.md` | Requiere disciplina de ejecución y evidencia homogénea por spec | Hoja de ruta de implementación/cierre por fases + plantilla PRD mínima estandarizada | Ejecutar fase fundacional y actualizar estados con evidencia por cada spec |
+| T26 | Alta | Migraciones DB seguras en CI/CD | Disponible para agente | `docs/03_specs/active/SPEC-26_db_migrations_ci_cd.md` | Debe ejecutarse antes de cambios serios de schema y antes de Prisma | Migraciones versionadas, `synchronize` desactivado en QA/prod, backup prod y runbook DB | Implementar primero para estabilizar promociones de base de datos |
+| T27 | Media-Alta | Migración controlada de TypeORM a Prisma | Backlog | `docs/03_specs/active/SPEC-27_migracion_typeorm_a_prisma.md` | Depende de T26; cambio transversal de backend | Backend usando Prisma con baseline seguro y QA completo | Ejecutar después de T26, por módulos y con rollback claro |
 
 ## Harness operativo â€” 2026-05-27
 
@@ -119,6 +121,7 @@ Regla: cualquier tarea marcada done en MC2 debe verificarse contra cÃ³digo/pro
 - MC2 contiene tareas histÃ³ricas y tareas tÃ©cnicas/comerciales mezcladas; este plan consolida lo vigente.
 - Varias tareas crÃ­ticas figuran `done` en MC2, pero algunas requieren verificaciÃ³n contra cÃ³digo/DB antes de cerrarse en harness.
 - T13 estÃ¡ en revisiÃ³n: la migraciÃ³n a pnpm quedÃ³ aplicada, pero vulnerabilidades residuales pasan a seguimiento activo en T22.
+- T26/T27: antes de seguir cambiando schema, estabilizar migraciones DB en CI/CD y luego migrar TypeORM → Prisma de forma controlada.
 - Limpieza R2 puede ser destructiva: exigir dry-run y aprobaciÃ³n explÃ­cita antes de `--execute`.
 - Aumentar paralelismo en inferencia puede disparar rate limits/costos si no hay semÃ¡foros y backoff.
 - Cambios de dominio pueden romper variables bakeadas, redirects, CORS o callbacks.
