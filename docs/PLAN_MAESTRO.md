@@ -9,7 +9,8 @@ Tablero operativo canÃ³nico del proyecto ONAI OCR. Define estado actual, prior
 - Proyecto: `ONAI OCR`
 - Repo: `github.com/DanCabVar/onai-ocr-app`
 - Workspace: `/root/.openclaw/workspace/onai-ocr-app`
-- Branch local actual: `deploy/all-features`
+- Branch base de integración: `dev`
+- Flujo de promoción: `codex/spec-*` → `dev` → `qa` → `master`
 - ProducciÃ³n Docker Compose: `/docker/onai-ocr`
 - URLs pÃºblicas: `https://ocr.moti.cl`, `https://ocr-app.moti.cl`
 - API health: `https://ocr.moti.cl/api/auth/health`
@@ -99,9 +100,19 @@ Regla: cualquier tarea marcada done en MC2 debe verificarse contra cÃ³digo/pro
 | Caso | Leer |
 |---|---|
 | Deploy, rollback, CI/CD o producciÃ³n | `docs/07_runbooks/deploy.md` |
+| Branches, merges o promociones | `docs/07_runbooks/branch-flow.md` |
 | Desarrollo/verificaciÃ³n local | `docs/07_runbooks/local-dev.md` |
 | Secretos, env vars o credenciales | `docs/07_runbooks/secrets.md` |
 | Monitoring, health checks o alertas | `docs/07_runbooks/monitoring.md` |
+
+## Flujo de ramas actualizado — 2026-06-01
+
+- `dev` queda como rama de integración clonada desde `deploy/all-features`.
+- Cada feature/spec debe nacer y mantenerse en una rama propia `codex/spec-XX-*` hasta revisión.
+- Promoción obligatoria: `dev → qa → master`.
+- `qa` despliega el ambiente QA; `master` despliega producción.
+- `deploy/all-features` queda legacy temporal y no se elimina hasta instrucción explícita de Danilo.
+- Runbook obligatorio: `docs/07_runbooks/branch-flow.md`.
 
 ## Riesgos principales
 
