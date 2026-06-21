@@ -2,6 +2,14 @@ import axios from 'axios';
 
 const API_URL = '/api';
 
+export interface ProgressEvent {
+  status: 'processing' | 'completed' | 'failed';
+  step: string;
+  progress_pct: number;
+  message: string;
+  error?: string;
+}
+
 export interface InferredField {
   name: string;
   type: string;
@@ -17,8 +25,8 @@ export interface CreatedDocumentType {
   description: string;
   fieldCount: number;
   sampleDocumentCount: number;
-  googleDriveFolderId: string;
-  folderPath: string;
+  googleDriveFolderId?: string;
+  folderPath?: string;
   fields: InferredField[];
 }
 
@@ -30,23 +38,86 @@ export interface InferFromSamplesResponse {
   totalTypesCreated: number;
 }
 
+interface InferFromSamplesJobStartResponse {
+  jobId: string;
+  status: 'processing';
+}
+
+interface InferFromSamplesJobStatusResponse {
+  jobId: string;
+  status: 'processing' | 'completed' | 'failed';
+  step: string;
+  progress: number;
+  message: string;
+  results?: InferFromSamplesResponse;
+  error?: string;
+}
+
 class DocumentTypeInferenceService {
-  /**
-   * Infiere tipos de documento desde archivos de ejemplo
-   * @param files - Array de archivos (2-10)
-   * @param uploadSamples - Si se deben subir los archivos de ejemplo a Drive
-   * @returns Tipos creados
-   */
-  async inferFromSamples(
-    files: File[],
-    uploadSamples: boolean = false
-  ): Promise<InferFromSamplesResponse> {
+  private getAuthHeaders() {
     const token = localStorage.getItem('auth_token');
     if (!token) {
       throw new Error('No hay token de autenticación');
     }
 
-    // Validaciones
+    return {
+      Authorization: `Bearer ${token}`,
+    };
+  }
+
+  private async pollJobUntilFinished(
+    jobId: string,
+    onProgress?: (event: ProgressEvent) => void,
+  ): Promise<InferFromSamplesResponse> {
+    const pollIntervalMs = 2000;
+    const maxAttempts = 450;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+
+      const response = await axios.get<InferFromSamplesJobStatusResponse>(
+        `${API_URL}/document-types/jobs/${jobId}`,
+        {
+          headers: this.getAuthHeaders(),
+          timeout: 30000,
+        },
+      );
+
+      const job = response.data;
+
+      onProgress?.({
+        status: job.status,
+        step: job.step,
+        progress_pct: job.progress,
+        message: job.message,
+        error: job.error,
+      });
+
+      if (job.status === 'completed') {
+        return (
+          job.results || {
+            success: true,
+            message: job.message || 'Proceso completado',
+            createdTypes: [],
+            totalDocumentsProcessed: 0,
+            totalTypesCreated: 0,
+          }
+        );
+      }
+
+      if (job.status === 'failed') {
+        throw new Error(job.error || job.message || 'Error procesando documentos');
+      }
+    }
+
+    throw new Error('Tiempo de espera agotado procesando inferencia desde muestras');
+  }
+
+  async inferFromSamples(
+    files: File[],
+    uploadSamples: boolean = false,
+    onProgress?: (event: ProgressEvent) => void,
+  ): Promise<InferFromSamplesResponse> {
     if (!files || files.length < 2) {
       throw new Error('Se requieren al menos 2 archivos');
     }
@@ -55,41 +126,40 @@ class DocumentTypeInferenceService {
       throw new Error('Máximo 10 archivos permitidos');
     }
 
-    // Crear FormData
     const formData = new FormData();
     files.forEach((file) => {
       formData.append('files', file);
     });
 
-    // Hacer la solicitud
-    const response = await axios.post<InferFromSamplesResponse>(
+    const response = await axios.post<InferFromSamplesJobStartResponse>(
       `${API_URL}/document-types/infer-from-samples?uploadSamples=${uploadSamples}`,
       formData,
       {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          ...this.getAuthHeaders(),
           'Content-Type': 'multipart/form-data',
         },
-        timeout: 900000, // 15 minutos (margen extra para 10 documentos con homologación)
-      }
+        timeout: 120000,
+      },
     );
 
-    return response.data;
+    onProgress?.({
+      status: 'processing',
+      step: 'queued',
+      progress_pct: 0,
+      message: 'En cola...',
+    });
+
+    return this.pollJobUntilFinished(response.data.jobId, onProgress);
   }
 
-  // Alias para compatibilidad con el modal
   async inferFromSamplesWithProgress(
     files: File[],
     uploadSamples: boolean = false,
-    onProgress?: (stage: string, current: number, total: number) => void,
+    onProgress?: (event: ProgressEvent) => void,
   ): Promise<InferFromSamplesResponse> {
-    // onProgress is simulated — backend doesn't emit events yet
-    if (onProgress) onProgress('uploading', 0, files.length);
-    const result = await this.inferFromSamples(files, uploadSamples);
-    if (onProgress) onProgress('done', files.length, files.length);
-    return result;
+    return this.inferFromSamples(files, uploadSamples, onProgress);
   }
 }
 
 export const documentTypeInferenceService = new DocumentTypeInferenceService();
-
