@@ -221,20 +221,43 @@ export class DocumentProcessingService {
       const availableTypes = await this.getAvailableTypes(user.id);
       if (availableTypes.length === 0) {
         // No types defined — save as pending_confirmation so user can define a type
-        const document = this.documentRepository.create({
-          userId: user.id,
-          filename: originalName,
-          storageKey: originalKey,
-          storageProvider: 'r2',
-          ocrRawText: ocrResult?.text || null,
-          status: 'pending_confirmation',
-          inferredData: { inferred_type: 'Sin tipo', summary: 'No hay tipos de documento definidos. Define un tipo para extraer los campos.', key_fields: [] },
-        });
-        await this.documentRepository.save(document);
+        let document: Document | null;
+        if (existingDocId) {
+          await this.documentRepository.update(existingDocId, {
+            filename: originalName,
+            storageKey: originalKey,
+            storageProvider: 'r2',
+            ocrRawText: ocrResult?.text || null,
+            status: 'pending_confirmation',
+            inferredData: {
+              inferred_type: 'Sin tipo',
+              summary: 'No hay tipos de documento definidos. Define un tipo para extraer los campos.',
+              key_fields: [],
+            } as any,
+            extractedData: null,
+            documentTypeId: null,
+          });
+          document = await this.documentRepository.findOne({ where: { id: existingDocId } });
+        } else {
+          document = this.documentRepository.create({
+            userId: user.id,
+            filename: originalName,
+            storageKey: originalKey,
+            storageProvider: 'r2',
+            ocrRawText: ocrResult?.text || null,
+            status: 'pending_confirmation',
+            inferredData: {
+              inferred_type: 'Sin tipo',
+              summary: 'No hay tipos de documento definidos. Define un tipo para extraer los campos.',
+              key_fields: [],
+            },
+          });
+          await this.documentRepository.save(document);
+        }
         return {
           success: false,
           pendingConfirmation: true,
-          documentId: document.id,
+          documentId: document!.id,
           filename: originalName,
           suggestedType: 'Sin tipo',
           message: 'No hay tipos definidos. Define un tipo para procesar este documento.',

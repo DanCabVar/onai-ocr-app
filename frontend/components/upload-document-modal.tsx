@@ -33,6 +33,7 @@ type FileItemStatus = "queued" | "uploading" | "ocr" | "classifying" | "extracti
 interface FileItem {
   file: File
   id: string
+  documentId?: number
   status: FileItemStatus
   error?: string
   result?: BatchDocumentResult
@@ -78,12 +79,16 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
     if (doc?.status === "error") return "error"
 
     switch (doc?.processingStep) {
+      case "upload_received":
+        return "uploading"
       case "reading_document":
         return "ocr"
       case "identifying_type":
         return "classifying"
       case "analyzing_content":
         return "extracting"
+      case "homologating_type":
+        return "homologating"
       case "saving_result":
         return "saving"
       default:
@@ -206,6 +211,10 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
 
       if (isAsync) {
         const documentIds: number[] = (response as any).documentIds ?? []
+        setFileItems(prev => prev.map((item, index) => ({
+          ...item,
+          documentId: documentIds[index] ?? item.documentId,
+        })))
         // Show uploading → classifying while polling
         setFileItems(prev => prev.map(item => ({ ...item, status: "classifying" as FileItemStatus })))
 
@@ -218,7 +227,7 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
               try {
                 const status = await documentsService.getBatchStatus(documentIds)
                 setFileItems(prev => prev.map(item => {
-                  const doc = status.documents.find((d: any) => d.filename === item.file.name)
+                  const doc = status.documents.find((d: any) => d.id === item.documentId)
                   if (!doc) return item
                   return {
                     ...item,
@@ -228,7 +237,7 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
                 if (status.allDone) {
                   // Update file items with real status
                   setFileItems(prev => prev.map(item => {
-                    const doc = status.documents.find((d: any) => d.filename === item.file.name)
+                    const doc = status.documents.find((d: any) => d.id === item.documentId)
                     if (!doc) return { ...item, status: "completed" as FileItemStatus }
                     return {
                       ...item,
@@ -602,7 +611,7 @@ export default function UploadDocumentModal({ open, onOpenChange, onUploadSucces
                         <p className="text-sm font-medium truncate">{item.file.name}</p>
                         <p className={cn("text-xs", config.color)}>{config.label}</p>
                       </div>
-                      {(item.status === "uploading" || item.status === "ocr" || item.status === "classifying") && (
+                      {["uploading", "ocr", "classifying", "extracting", "homologating", "saving"].includes(item.status) && (
                         <Loader2 className="h-4 w-4 animate-spin text-primary flex-shrink-0" />
                       )}
                       {item.status === "completed" && (

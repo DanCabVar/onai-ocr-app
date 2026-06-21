@@ -651,8 +651,7 @@ export class DocumentsService {
               await self.documentRepository.update(doc.id, { status: 'processing' });
               const fileBuffer = await self.storageService.downloadFile(doc.storageKey);
               const mimeType = doc.filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
-              await self.documentProcessingService.processDocument(fileBuffer, doc.filename, mimeType, currentUser);
-              await self.documentRepository.remove(doc);
+              await self.processInBackground(doc.id, fileBuffer, doc.filename, mimeType, currentUser);
             } catch (e: any) {
               self.logger.error(`Failed processing queued doc ${doc.id}: ${e.message}`);
               await self.documentRepository.update(doc.id, { status: 'error' });
