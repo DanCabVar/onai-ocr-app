@@ -44,6 +44,7 @@ export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
   private readonly UPLOAD_QUEUE_CONCURRENCY = 4;
   private readonly BACKGROUND_PROCESS_CONCURRENCY = 3;
+  private readonly DUPLICATE_RECONCILIATION_WINDOW_MS = 15 * 60 * 1000;
   private readonly progressByDocumentId = new Map<number, string>();
   private readonly progressPersistQueue = new Map<number, Promise<void>>();
 
@@ -214,20 +215,50 @@ export class DocumentsService {
     }
   }
 
+  private findReplacementDocument<T extends { id: number; filename: string; status: string; createdAt?: Date | string; updatedAt?: Date | string }>(
+    source: T,
+    candidates: T[],
+  ): T | null {
+    if (source.status !== 'processing' && source.status !== 'queued') {
+      return null;
+    }
+
+    const sourceTime = new Date(source.createdAt || source.updatedAt || 0).getTime();
+    const matches = candidates
+      .filter((candidate) =>
+        candidate.id !== source.id &&
+        candidate.filename === source.filename &&
+        candidate.status !== 'processing' &&
+        candidate.status !== 'queued',
+      )
+      .filter((candidate) => {
+        const candidateTime = new Date(candidate.createdAt || candidate.updatedAt || 0).getTime();
+        return Math.abs(candidateTime - sourceTime) <= this.DUPLICATE_RECONCILIATION_WINDOW_MS;
+      })
+      .sort((a, b) =>
+        new Date(b.createdAt || b.updatedAt || 0).getTime() -
+        new Date(a.createdAt || a.updatedAt || 0).getTime(),
+      );
+
+    return matches[0] || null;
+  }
+
   async getDocuments(user: User, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
 
-    const [documents, total] = await this.documentRepository.findAndCount({
+    const documents = await this.documentRepository.find({
       where: { userId: user.id },
       order: { createdAt: 'DESC' },
       relations: ['documentType'],
-      skip,
-      take: limit,
     });
+
+    const dedupedDocuments = documents.filter((doc) => !this.findReplacementDocument(doc, documents));
+    const total = dedupedDocuments.length;
+    const pagedDocuments = dedupedDocuments.slice(skip, skip + limit);
 
     // Generate fresh presigned URLs for R2-stored docs
     const items = await Promise.all(
-      documents.map(async (doc) => {
+      pagedDocuments.map(async (doc) => {
         let fileUrl: string | null = null;
 
         if (doc.storageProvider === 'r2' && doc.storageKey) {
@@ -309,15 +340,26 @@ export class DocumentsService {
   async getBatchStatus(documentIds: number[], user: User) {
     const documents = await this.documentRepository.find({
       where: { id: In(documentIds), userId: user.id },
-      select: ['id', 'status', 'filename', 'documentTypeId', 'confidenceScore', 'updatedAt', 'processingStep'],
+      select: ['id', 'status', 'filename', 'documentTypeId', 'confidenceScore', 'createdAt', 'updatedAt', 'processingStep'],
       relations: ['documentType'],
     });
 
-    const total = documents.length;
-    const completed = documents.filter((d) => d.status === 'completed').length;
-    const processing = documents.filter((d) => d.status === 'processing').length;
-    const errors = documents.filter((d) => d.status === 'error').length;
-    const pending = documents.filter((d) => d.status === 'pending_confirmation').length;
+    const filenames = Array.from(new Set(documents.map((document) => document.filename)));
+    const candidateDocuments = filenames.length > 0
+      ? await this.documentRepository.find({
+          where: { userId: user.id, filename: In(filenames) },
+          select: ['id', 'status', 'filename', 'documentTypeId', 'confidenceScore', 'createdAt', 'updatedAt', 'processingStep'],
+          relations: ['documentType'],
+        })
+      : [];
+
+    const resolvedDocuments = documents.map((document) => this.findReplacementDocument(document as any, candidateDocuments as any) || document);
+
+    const total = resolvedDocuments.length;
+    const completed = resolvedDocuments.filter((d) => d.status === 'completed').length;
+    const processing = resolvedDocuments.filter((d) => d.status === 'processing').length;
+    const errors = resolvedDocuments.filter((d) => d.status === 'error').length;
+    const pending = resolvedDocuments.filter((d) => d.status === 'pending_confirmation').length;
 
     return {
       total,
@@ -326,7 +368,7 @@ export class DocumentsService {
       pendingConfirmation: pending,
       errors,
       allDone: processing === 0,
-      documents: documents.map((d) => ({
+      documents: resolvedDocuments.map((d) => ({
         id: d.id,
         filename: d.filename,
         status: d.status,
