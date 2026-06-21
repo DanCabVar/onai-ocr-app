@@ -108,6 +108,13 @@ export class DocumentProcessingService {
 
   /** Tamaño máximo de archivo: 10MB */
   private readonly MAX_FILE_SIZE = 10 * 1024 * 1024;
+  private readonly PROGRESS_STEPS = {
+    READING: 'reading_document',
+    IDENTIFYING: 'identifying_type',
+    ANALYZING: 'analyzing_content',
+    SAVING: 'saving_result',
+    DONE: 'completed',
+  } as const;
 
   /**
    * Valida el archivo antes de procesarlo.
@@ -147,6 +154,7 @@ export class DocumentProcessingService {
     mimeType: string,
     user: User,
     existingDocId?: number,
+    onProgress?: (step: string) => Promise<void> | void,
   ): Promise<ProcessingResult> {
     // ─── Validaciones previas ───
     this.validateFile(fileBuffer, mimeType, originalName);
@@ -176,6 +184,7 @@ export class DocumentProcessingService {
       const presignedUrl = await this.storageService.getPresignedUrl(originalKey, 600);
       this.metrics.endStage(presignMetric);
 
+      await onProgress?.(this.PROGRESS_STEPS.READING);
       // ─── PASO 3: OCR (with cache check) ───
       const ocrMetric = this.metrics.startStage(ctx, 'ocr');
       const contentHash = this.ocrCache.computeHash(fileBuffer);
@@ -232,6 +241,7 @@ export class DocumentProcessingService {
         } as any;
       }
 
+      await onProgress?.(this.PROGRESS_STEPS.IDENTIFYING);
       // ─── PASO 4+5: Unified classify + extract in a SINGLE Vision call ───
       const classifyExtractMetric = this.metrics.startStage(ctx, 'classify-and-extract');
       const unified = await this.geminiClassifierService.classifyAndExtract(
@@ -249,6 +259,7 @@ export class DocumentProcessingService {
       let createdOthersFolder = false;
       let inferredData = unified.inferredData;
       let extractedData: any;
+      await onProgress?.(this.PROGRESS_STEPS.ANALYZING);
 
       // ─── Resolve document type ───
       if (classification.isOthers) {
@@ -321,6 +332,7 @@ export class DocumentProcessingService {
       // Generate view URL (7 days)
       const viewUrl = await this.storageService.getPresignedUrl(finalKey, 7 * 24 * 3600);
 
+      await onProgress?.(this.PROGRESS_STEPS.SAVING);
       // ─── PASO 7: Save to database ───
       const dbMetric = this.metrics.startStage(ctx, 'save-db');
       let document: any;
@@ -367,6 +379,7 @@ export class DocumentProcessingService {
       await this.subscriptionsService.incrementUsage(user.id);
 
       this.logger.log(`✅ Documento procesado: ${document.id}`);
+      await onProgress?.(this.PROGRESS_STEPS.DONE);
 
       return {
         document,
