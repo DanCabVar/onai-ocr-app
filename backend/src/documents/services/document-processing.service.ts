@@ -265,6 +265,7 @@ export class DocumentProcessingService {
       }
 
       await onProgress?.(this.PROGRESS_STEPS.IDENTIFYING);
+      await onProgress?.(this.PROGRESS_STEPS.ANALYZING);
       // ─── PASO 4+5: Unified classify + extract in a SINGLE Vision call ───
       const classifyExtractMetric = this.metrics.startStage(ctx, 'classify-and-extract');
       const unified = await this.geminiClassifierService.classifyAndExtract(
@@ -282,7 +283,6 @@ export class DocumentProcessingService {
       let createdOthersFolder = false;
       let inferredData = unified.inferredData;
       let extractedData: any;
-      await onProgress?.(this.PROGRESS_STEPS.ANALYZING);
 
       // ─── Resolve document type ───
       if (classification.isOthers) {
