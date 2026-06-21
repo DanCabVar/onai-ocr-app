@@ -72,6 +72,7 @@ export interface Document {
   ocrRawText?: string | null;
   confidenceScore: number;
   status: string;
+  processingStep?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -225,7 +226,7 @@ export const documentsService = {
   async getBatchStatus(documentIds: number[]): Promise<{
     total: number; completed: number; processing: number; pendingConfirmation: number;
     errors: number; allDone: boolean;
-    documents: Array<{ id: number; filename: string; status: string; documentTypeName: string | null; confidenceScore: number }>
+    documents: Array<{ id: number; filename: string; status: string; processingStep?: string | null; documentTypeName: string | null; confidenceScore: number }>
   }> {
     const response = await apiClient.post('/documents/batch-status', { documentIds });
     return response.data;
