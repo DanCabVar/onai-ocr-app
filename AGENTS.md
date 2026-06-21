@@ -147,6 +147,24 @@ Consolidar o evitar crear un spec nuevo cuando:
 
 Threshold operativo: si `docs/03_specs/active/` supera 20 specs, hacer triage antes de agregar más.
 
+
+## Flujo de ramas y despliegues
+
+Flujo canónico del proyecto:
+
+```txt
+codex/spec-XX-*  →  dev  →  qa  →  master
+```
+
+Reglas críticas:
+
+- Toda feature/spec se trabaja en una rama propia `codex/spec-XX-*`.
+- `dev` es integración; no fusionar specs directo a `qa` o `master`.
+- `qa` solo recibe promociones desde `dev` y dispara deploy QA.
+- `master` solo recibe promociones desde `qa` validado y dispara producción.
+- `deploy/all-features` es legacy temporal; no crear trabajo nuevo ahí. Se eliminará más adelante solo cuando Danilo lo confirme.
+- Antes de tocar deploy, leer `docs/07_runbooks/branch-flow.md` y `docs/07_runbooks/deploy.md`.
+
 ## Reglas técnicas del proyecto
 
 - Repo real de trabajo: `/root/.openclaw/workspace/onai-ocr-app`.

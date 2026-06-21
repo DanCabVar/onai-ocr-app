@@ -9,7 +9,8 @@ Tablero operativo canÃ³nico del proyecto ONAI OCR. Define estado actual, prior
 - Proyecto: `ONAI OCR`
 - Repo: `github.com/DanCabVar/onai-ocr-app`
 - Workspace: `/root/.openclaw/workspace/onai-ocr-app`
-- Branch local actual: `deploy/all-features`
+- Branch base de integración: `dev`
+- Flujo de promoción: `codex/spec-*` → `dev` → `qa` → `master`
 - ProducciÃ³n Docker Compose: `/docker/onai-ocr`
 - URLs pÃºblicas: `https://ocr.moti.cl`, `https://ocr-app.moti.cl`
 - API health: `https://ocr.moti.cl/api/auth/health`
@@ -85,6 +86,8 @@ Regla: cualquier tarea marcada done en MC2 debe verificarse contra cÃ³digo/pro
 | T23 | Alta | Estandarizar configuración ESLint (frontend + backend) | En revisión | `docs/03_specs/active/SPEC-23_estandarizar_eslint_config.md` | Pendiente validación final lint+build en ambos proyectos y evidencia CI | Config ESLint versionada + CI ejecutando lint obligatorio en ambos proyectos | Consolidar evidencia final y preparar merge a rama deploy |
 | T24 | Alta | RAG híbrido sobre Markdown grafo (Obsidian-ready) | En revisión | `docs/03_specs/active/SPEC-24_rag_hibrido_markdown_grafo_obsidian.md` | Depende de outputs de SPEC-21 y control estricto de aislamiento por tenant | Retrieval híbrido con trazabilidad de fuentes desde respaldos Markdown | Validar E2E tenant real y preparar merge desde `codex/spec-24-rag-hibrido-markdown-grafo-obsidian`; evidencia en `docs/04_trabajo/T24_rag_hibrido_markdown_grafo_obsidian/README.md` |
 | T25 | Alta | Plan PRD por fases para cierre sin retrabajo | Disponible para agente | `docs/03_specs/active/SPEC-25_plan_prd_fases_cierre_sin_retrabajo.md` | Requiere disciplina de ejecución y evidencia homogénea por spec | Hoja de ruta de implementación/cierre por fases + plantilla PRD mínima estandarizada | Ejecutar fase fundacional y actualizar estados con evidencia por cada spec |
+| T26 | Alta | Migraciones DB seguras en CI/CD | Disponible para agente | `docs/03_specs/active/SPEC-26_db_migrations_ci_cd.md` | Debe ejecutarse antes de cambios serios de schema y antes de Prisma | Migraciones versionadas, `synchronize` desactivado en QA/prod, backup prod y runbook DB | Implementar primero para estabilizar promociones de base de datos |
+| T27 | Media-Alta | Migración controlada de TypeORM a Prisma | Backlog | `docs/03_specs/active/SPEC-27_migracion_typeorm_a_prisma.md` | Depende de T26; cambio transversal de backend | Backend usando Prisma con baseline seguro y QA completo | Ejecutar después de T26, por módulos y con rollback claro |
 
 ## Harness operativo â€” 2026-05-27
 
@@ -99,15 +102,26 @@ Regla: cualquier tarea marcada done en MC2 debe verificarse contra cÃ³digo/pro
 | Caso | Leer |
 |---|---|
 | Deploy, rollback, CI/CD o producciÃ³n | `docs/07_runbooks/deploy.md` |
+| Branches, merges o promociones | `docs/07_runbooks/branch-flow.md` |
 | Desarrollo/verificaciÃ³n local | `docs/07_runbooks/local-dev.md` |
 | Secretos, env vars o credenciales | `docs/07_runbooks/secrets.md` |
 | Monitoring, health checks o alertas | `docs/07_runbooks/monitoring.md` |
+
+## Flujo de ramas actualizado — 2026-06-01
+
+- `dev` queda como rama de integración clonada desde `deploy/all-features`.
+- Cada feature/spec debe nacer y mantenerse en una rama propia `codex/spec-XX-*` hasta revisión.
+- Promoción obligatoria: `dev → qa → master`.
+- `qa` despliega el ambiente QA; `master` despliega producción.
+- `deploy/all-features` queda legacy temporal y no se elimina hasta instrucción explícita de Danilo.
+- Runbook obligatorio: `docs/07_runbooks/branch-flow.md`.
 
 ## Riesgos principales
 
 - MC2 contiene tareas histÃ³ricas y tareas tÃ©cnicas/comerciales mezcladas; este plan consolida lo vigente.
 - Varias tareas crÃ­ticas figuran `done` en MC2, pero algunas requieren verificaciÃ³n contra cÃ³digo/DB antes de cerrarse en harness.
 - T13 estÃ¡ en revisiÃ³n: la migraciÃ³n a pnpm quedÃ³ aplicada, pero vulnerabilidades residuales pasan a seguimiento activo en T22.
+- T26/T27: antes de seguir cambiando schema, estabilizar migraciones DB en CI/CD y luego migrar TypeORM → Prisma de forma controlada.
 - Limpieza R2 puede ser destructiva: exigir dry-run y aprobaciÃ³n explÃ­cita antes de `--execute`.
 - Aumentar paralelismo en inferencia puede disparar rate limits/costos si no hay semÃ¡foros y backoff.
 - Cambios de dominio pueden romper variables bakeadas, redirects, CORS o callbacks.
