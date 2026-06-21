@@ -1,6 +1,4 @@
-import axios from 'axios';
-
-const API_URL = '/api';
+import { apiClient } from '@/lib/api/client';
 
 export interface ProgressEvent {
   status: 'processing' | 'completed' | 'failed';
@@ -75,8 +73,8 @@ class DocumentTypeInferenceService {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
 
-      const response = await axios.get<InferFromSamplesJobStatusResponse>(
-        `${API_URL}/document-types/jobs/${jobId}`,
+      const response = await apiClient.get<InferFromSamplesJobStatusResponse>(
+        `/document-types/jobs/${jobId}`,
         {
           headers: this.getAuthHeaders(),
           timeout: 30000,
@@ -131,8 +129,8 @@ class DocumentTypeInferenceService {
       formData.append('files', file);
     });
 
-    const response = await axios.post<InferFromSamplesJobStartResponse>(
-      `${API_URL}/document-types/infer-from-samples?uploadSamples=${uploadSamples}`,
+    const response = await apiClient.post<InferFromSamplesJobStartResponse>(
+      `/document-types/infer-from-samples?uploadSamples=${uploadSamples}`,
       formData,
       {
         headers: {
