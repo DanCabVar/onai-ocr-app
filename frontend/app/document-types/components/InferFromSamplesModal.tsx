@@ -232,6 +232,7 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
                     id="file-input"
                   />
                   <Button
+                    type="button"
                     variant="outline"
                     size="sm"
                     onClick={() => document.getElementById('file-input')?.click()}
@@ -249,6 +250,7 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
                       Documentos seleccionados ({files.length}/10)
                     </h3>
                     <Button
+                      type="button"
                       variant="ghost"
                       size="sm"
                       onClick={() => setFiles([])}
@@ -270,6 +272,7 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
                           </p>
                         </div>
                         <Button
+                          type="button"
                           variant="ghost"
                           size="sm"
                           onClick={() => removeFile(index)}
@@ -459,7 +462,7 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
               <AlertCircle className="h-16 w-16 mx-auto mb-4 text-destructive" />
               <h3 className="text-lg font-semibold mb-2">Error al procesar</h3>
               <p className="text-sm text-muted-foreground mb-6">{errorMessage}</p>
-              <Button onClick={() => setState('upload')}>Reintentar</Button>
+                <Button type="button" onClick={() => setState('upload')}>Reintentar</Button>
             </div>
           )}
         </div>
@@ -468,10 +471,11 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
         <div className="flex justify-end gap-2 pt-4 border-t border-border">
           {state === 'upload' && (
             <>
-              <Button variant="outline" onClick={handleClose}>
+              <Button type="button" variant="outline" onClick={handleClose}>
                 Cancelar
               </Button>
               <Button
+                type="button"
                 onClick={handleProcess}
                 disabled={files.length < 2}
               >
@@ -482,7 +486,7 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
           )}
 
           {state === 'success' && (
-            <Button onClick={() => {
+            <Button type="button" onClick={() => {
               onSuccess() // Recargar la lista de tipos de documento
               handleClose() // Cerrar el modal
             }}>
@@ -491,7 +495,7 @@ export function InferFromSamplesModal({ isOpen, onClose, onSuccess }: InferFromS
           )}
 
           {state === 'error' && (
-            <Button variant="outline" onClick={handleClose}>
+            <Button type="button" variant="outline" onClick={handleClose}>
               Cerrar
             </Button>
           )}

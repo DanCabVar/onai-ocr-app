@@ -129,17 +129,25 @@ class DocumentTypeInferenceService {
       formData.append('files', file);
     });
 
-    const response = await apiClient.post<InferFromSamplesJobStartResponse>(
-      `/document-types/infer-from-samples?uploadSamples=${uploadSamples}`,
-      formData,
+    const response = await fetch(
+      `/api/document-types/infer-from-samples?uploadSamples=${uploadSamples}`,
       {
-        headers: {
-          ...this.getAuthHeaders(),
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 120000,
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: formData,
       },
     );
+
+    if (!response.ok) {
+      let message = 'Error iniciando inferencia desde muestras';
+      try {
+        const data = await response.json();
+        message = data?.message || message;
+      } catch {}
+      throw new Error(message);
+    }
+
+    const data = (await response.json()) as InferFromSamplesJobStartResponse;
 
     onProgress?.({
       status: 'processing',
@@ -148,7 +156,7 @@ class DocumentTypeInferenceService {
       message: 'En cola...',
     });
 
-    return this.pollJobUntilFinished(response.data.jobId, onProgress);
+    return this.pollJobUntilFinished(data.jobId, onProgress);
   }
 
   async inferFromSamplesWithProgress(
