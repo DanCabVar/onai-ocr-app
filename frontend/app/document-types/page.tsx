@@ -1,14 +1,15 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
-import { Plus, Edit, Trash2, FileText, Loader2, Sparkles, Search } from "lucide-react"
+import { useState, useEffect, useMemo, useCallback } from "react"
+import { Plus, Edit, Trash2, FileText, Loader2, Sparkles, Search, CheckCircle2, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
-import { documentTypesService, DocumentType, FieldDefinition } from "@/lib/api/document-types.service"
+import { documentTypesService, DocumentType } from "@/lib/api/document-types.service"
 import { DocumentTypeModal } from "@/components/document-type-modal"
 import { InferFromSamplesModal } from "./components/InferFromSamplesModal"
+import { documentTypeInferenceService, ProgressEvent } from "@/app/services/document-type-inference.service"
 import {
   Table,
   TableBody,
@@ -28,18 +29,19 @@ export default function DocumentTypesPage() {
   const [isInferModalOpen, setIsInferModalOpen] = useState(false)
   const [editingType, setEditingType] = useState<DocumentType | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [activeInferenceJobId, setActiveInferenceJobId] = useState<string | null>(null)
+  const [activeInferenceFileCount, setActiveInferenceFileCount] = useState(0)
+  const [inferenceProgress, setInferenceProgress] = useState<ProgressEvent | null>(null)
+  const [inferenceError, setInferenceError] = useState<string | null>(null)
   const { toast } = useToast()
 
   // Cargar tipos de documento
-  const loadDocumentTypes = async () => {
+  const loadDocumentTypes = useCallback(async () => {
     try {
       setIsLoading(true)
       const types = await documentTypesService.getAll()
       setDocumentTypes(types)
-      // Seleccionar el primero por defecto si hay tipos
-      if (types.length > 0 && !selectedType) {
-        setSelectedType(types[0])
-      }
+      setSelectedType((current) => current || types[0] || null)
     } catch (error: any) {
       toast({
         title: "Error",
@@ -49,11 +51,66 @@ export default function DocumentTypesPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [toast])
 
   useEffect(() => {
     loadDocumentTypes()
-  }, [])
+  }, [loadDocumentTypes])
+
+  useEffect(() => {
+    if (!activeInferenceJobId) {
+      return
+    }
+
+    let isCancelled = false
+
+    const trackJob = async () => {
+      try {
+        await documentTypeInferenceService.waitForInferenceJob(
+          activeInferenceJobId,
+          (event) => {
+            if (isCancelled) {
+              return
+            }
+            setInferenceProgress(event)
+          },
+        )
+
+        if (isCancelled) {
+          return
+        }
+
+        toast({
+          title: "Inferencia completada",
+          description: "Los tipos inferidos ya están disponibles en la lista",
+        })
+        setActiveInferenceJobId(null)
+        setActiveInferenceFileCount(0)
+        setInferenceError(null)
+        loadDocumentTypes()
+      } catch (error: any) {
+        if (isCancelled) {
+          return
+        }
+
+        const message = error?.message || "Error procesando inferencia"
+        setInferenceError(message)
+        setActiveInferenceJobId(null)
+        setActiveInferenceFileCount(0)
+        toast({
+          title: "Error en la inferencia",
+          description: message,
+          variant: "destructive",
+        })
+      }
+    }
+
+    trackJob()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [activeInferenceJobId, loadDocumentTypes, toast])
 
   // Filter types by search
   const filteredTypes = useMemo(() => {
@@ -127,6 +184,18 @@ export default function DocumentTypesPage() {
     loadDocumentTypes()
   }
 
+  const handleInferenceJobStarted = (jobId: string, fileCount: number) => {
+    setInferenceError(null)
+    setActiveInferenceJobId(jobId)
+    setActiveInferenceFileCount(fileCount)
+    setInferenceProgress({
+      status: "processing",
+      step: "queued",
+      progress_pct: 0,
+      message: "Job iniciado. El seguimiento continuará fuera del modal.",
+    })
+  }
+
   // Select a card
   const handleCardClick = (type: DocumentType) => {
     setSelectedType(type)
@@ -167,6 +236,45 @@ export default function DocumentTypesPage() {
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-[2200px] mx-auto px-4">
+          {(activeInferenceJobId || inferenceError) && (
+            <Card className="mb-6 rounded-2xl border-primary/30">
+              <CardContent className="p-4 flex items-start gap-3">
+                {inferenceError ? (
+                  <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+                ) : inferenceProgress?.status === "completed" ? (
+                  <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
+                ) : (
+                  <Loader2 className="h-5 w-5 text-primary animate-spin mt-0.5" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium">
+                    {inferenceError
+                      ? "La inferencia terminó con error"
+                      : `Procesando inferencia de ${activeInferenceFileCount} documento(s)`}
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {inferenceError ||
+                      inferenceProgress?.message ||
+                      "Iniciando procesamiento..."}
+                  </p>
+                  {!inferenceError && (
+                    <div className="mt-3">
+                      <div className="h-2 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all"
+                          style={{ width: `${inferenceProgress?.progress_pct || 0}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {inferenceProgress?.progress_pct || 0}% completado
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {documentTypes.length === 0 ? (
             <div className="flex items-center justify-center h-full p-6">
               <Card className="p-12 text-center max-w-md rounded-2xl">
@@ -363,7 +471,7 @@ export default function DocumentTypesPage() {
       <InferFromSamplesModal
         isOpen={isInferModalOpen}
         onClose={() => setIsInferModalOpen(false)}
-        onSuccess={loadDocumentTypes}
+        onJobStarted={handleInferenceJobStarted}
       />
     </div>
   )
