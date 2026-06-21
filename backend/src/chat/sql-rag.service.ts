@@ -29,6 +29,8 @@ const FORBIDDEN_PATTERNS = [
   /;\s*\w/, // multiple statements
   /--/, // SQL comments
   /\/\*/, // block comments
+  /\b(from|join)\s+(?:public\.)?(documents|document_types|subscriptions|users)\b/i, // direct table access
+  /\b(from|join)\s+(?:pg_catalog|information_schema)\b/i, // system catalogs
 ];
 
 export interface SqlRagResult {
@@ -307,6 +309,13 @@ Solo la query SQL, sin backticks ni explicaciones. Si no puedes, responde: NO_SQ
         'La query no incluye el parámetro de usuario $1. Rechazada por seguridad.',
       );
     }
+
+    // Enforce tenant-filtered views for chat queries.
+    if (!/\bmy_documents\b/i.test(sql) && !/\bmy_document_types\b/i.test(sql)) {
+      throw new ForbiddenException(
+        'La query debe usar las vistas my_documents o my_document_types.',
+      );
+    }
   }
 
   /**
@@ -345,7 +354,10 @@ Solo la query SQL, sin backticks ni explicaciones. Si no puedes, responde: NO_SQ
       await queryRunner.query(`SET LOCAL statement_timeout = ${QUERY_TIMEOUT_MS}`);
       // Capa 2 de aislamiento multi-tenant: RLS via variable de sesión
       // Aunque la IA olvide el filtro WHERE user_id, la DB rechaza filas ajenas
-      await queryRunner.query(`SET LOCAL app.current_user_id = ${params[0]}`);
+      await queryRunner.query(
+        `SELECT set_config('app.current_user_id', $1, true)`,
+        [String(params[0])],
+      );
 
       const rows = await queryRunner.query(sql, params);
 
