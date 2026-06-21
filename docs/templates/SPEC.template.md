@@ -19,9 +19,9 @@
 
 ## Archivos/modulos relevantes
 
-## Criterios de aceptacion
+## Criterios de aceptación
 
-## Plan de prueba / verificacion minima
+## Plan de prueba / verificación mínima
 
 - Casos positivos:
 - Casos negativos:
