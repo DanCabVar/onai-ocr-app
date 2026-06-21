@@ -1,4 +1,5 @@
-import { apiClient } from '@/lib/api/client';
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || 'https://ocr.moti.cl/api';
 
 export interface ProgressEvent {
   status: 'processing' | 'completed' | 'failed';
@@ -73,15 +74,24 @@ class DocumentTypeInferenceService {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
 
-      const response = await apiClient.get<InferFromSamplesJobStatusResponse>(
-        `/document-types/jobs/${jobId}`,
+      const response = await fetch(
+        `${API_BASE_URL}/document-types/jobs/${jobId}`,
         {
+          method: 'GET',
           headers: this.getAuthHeaders(),
-          timeout: 30000,
         },
       );
 
-      const job = response.data;
+      if (!response.ok) {
+        let message = 'Error consultando estado de inferencia';
+        try {
+          const data = await response.json();
+          message = data?.message || message;
+        } catch {}
+        throw new Error(message);
+      }
+
+      const job = (await response.json()) as InferFromSamplesJobStatusResponse;
 
       onProgress?.({
         status: job.status,
@@ -130,7 +140,7 @@ class DocumentTypeInferenceService {
     });
 
     const response = await fetch(
-      `/api/document-types/infer-from-samples?uploadSamples=${uploadSamples}`,
+      `${API_BASE_URL}/document-types/infer-from-samples?uploadSamples=${uploadSamples}`,
       {
         method: 'POST',
         headers: this.getAuthHeaders(),
