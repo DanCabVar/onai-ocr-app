@@ -42,7 +42,7 @@ Casos observados durante la validación:
 
 ### Fase 2 — Resolución semántica
 
-1. Crear matriz `campo canonico -> labels -> sinónimos -> exclusiones`.
+1. Crear matriz `campo canonico -> labels -> sinonimos -> exclusiones`.
 2. Priorizar campos de nombre por sobre rut/correo/teléfono/dirección.
 3. Agregar limpieza semántica post-query.
 4. Evitar duplicados y valores vacíos de forma centralizada.
@@ -59,6 +59,60 @@ Casos observados durante la validación:
 1. Agregar regresiones automatizadas por intención crítica.
 2. Repetir benchmark QA sobre documentos distintos al dataset actual.
 3. Consolidar evidencia final para cierre o división adicional del trabajo.
+
+## Arranque sugerido para la próxima sesión
+
+### Paso 1 — Benchmark inicial
+
+Crear un archivo versionado con al menos estas columnas:
+
+- `id`
+- `intent`
+- `conversation_context`
+- `question`
+- `expected_answer`
+- `allowed_variants`
+- `forbidden_terms`
+- `source_documents`
+- `status`
+
+### Paso 2 — Primer lote de preguntas
+
+Armar 15 preguntas base repartidas entre:
+
+- conteos;
+- tipos de documento;
+- fechas de emisión;
+- números de orden de compra;
+- proveedor / cliente / comprador;
+- follow-ups multi-turno.
+
+### Paso 3 — Matriz semántica base
+
+Definir una primera tabla para intenciones críticas:
+
+- `proveedor`
+- `cliente`
+- `comprador`
+- `numero_orden_compra`
+- `fecha_emision`
+- `tipo_documento`
+
+Y para cada una:
+
+- campos permitidos;
+- campos excluidos;
+- sinónimos/labels frecuentes;
+- reglas de deduplicación.
+
+### Paso 4 — Primera regresión automatizada
+
+Agregar regresiones mínimas para:
+
+- `proveedor` no mezcla correo/rut/teléfono;
+- `números de OC` no devuelve vacíos ni valores fuera del tipo correcto;
+- `tipos de documento` deduplica correctamente;
+- follow-ups conservan contexto útil sin contaminar la entidad buscada.
 
 ## Entregables de la próxima sesión
 

@@ -23,7 +23,7 @@ Esto indica que el problema ya no es solo del PoC híbrido de `T20`, sino de la c
 
 Incluye:
 
-- definir una capa semántica robusta para mapear preguntas ? intención ? campos candidatos;
+- definir una capa semántica robusta para mapear preguntas -> intención -> campos candidatos;
 - desacoplar lógica de consulta de heurísticas acopladas a un dataset puntual;
 - mejorar resolución de follow-ups multi-turno con memoria conversacional útil y acotada;
 - introducir validaciones automáticas para evitar duplicados, campos basura y resultados semánticamente incorrectos;
@@ -87,6 +87,8 @@ Excluye:
 ## Plan inicial por fases
 
 ### Fase 1 — Base semántica y benchmark
+
+Próximo arranque recomendado: crear benchmark versionado + matriz semántica base antes de tocar más lógica productiva.
 
 - definir catálogo de intenciones de primer nivel:
   - `count_documents`
