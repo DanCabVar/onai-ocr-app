@@ -82,4 +82,21 @@ describe('SqlRagService tenant isolation', () => {
       ['42'],
     );
   });
+
+  it('rewrites tenant views to scoped subqueries before execution', () => {
+    const { service } = createService();
+
+    const prepared = (service as any).prepareSafeQuery(
+      'SELECT COUNT(*) AS total FROM my_documents d JOIN my_document_types dt ON d.document_type_id = dt.id WHERE d.user_id = $1',
+      42,
+    );
+
+    expect(prepared.safeSql).toContain(
+      '(SELECT * FROM documents WHERE user_id = $1) d',
+    );
+    expect(prepared.safeSql).toContain(
+      '(SELECT * FROM document_types WHERE user_id = $1) dt',
+    );
+    expect(prepared.params).toEqual([42]);
+  });
 });
