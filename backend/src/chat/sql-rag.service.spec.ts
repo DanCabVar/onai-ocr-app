@@ -155,7 +155,10 @@ Pregunta actual del usuario: ¿y cuál es el proveedor?
 
     expect(sql).toContain('AS proveedor');
     expect(sql).toContain('EXISTS');
-    expect(sql).toContain('ORDER BY d.filename, proveedor');
+    expect(sql).toContain("lower(proveedor->>'name') LIKE '%nombre%'");
+    expect(sql).toContain("lower(proveedor->>'label') LIKE '%nombre%'");
+    expect(sql).toContain("NOT IN ('sin valor', '—', '-')");
+    expect(sql).toContain('ORDER BY proveedor');
   });
 
   it('builds deterministic date query with distinct rows to avoid duplicates', () => {
@@ -168,5 +171,29 @@ Pregunta actual del usuario: ¿y cuál es el proveedor?
     expect(sql).toContain('SELECT DISTINCT');
     expect(sql).toContain("AS fecha_emision");
     expect(sql).toContain('ORDER BY d.filename, fecha_emision');
+  });
+
+  it('builds deterministic purchase-order query scoped to purchase-order docs only', () => {
+    const { service } = createService();
+
+    const sql = (service as any).buildDeterministicFieldQuery(
+      '¿y cuáles son sus números de orden de compra?',
+    );
+
+    expect(sql).toBeNull();
+
+    const contextualSql = (service as any).buildDeterministicFieldQuery(`
+Contexto reciente de la conversación:
+
+Usuario: puedes darme las fechas de emisión de los documentos de Yolito
+Asistente: ok
+Usuario: el nombre del comprador es Yolito Balart Hnos. Ltda.
+
+Pregunta actual del usuario: ¿y cuáles son sus números de orden de compra?
+`);
+
+    expect(contextualSql).toContain("lower(dt.name) LIKE '%orden de compra%'");
+    expect(contextualSql).toContain("NOT IN ('sin valor', '—', '-')");
+    expect(contextualSql).toContain('AS numero_orden_compra');
   });
 });
