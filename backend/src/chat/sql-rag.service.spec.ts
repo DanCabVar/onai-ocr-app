@@ -99,4 +99,17 @@ describe('SqlRagService tenant isolation', () => {
     );
     expect(prepared.params).toEqual([42]);
   });
+
+  it('adds a default alias when the generated SQL uses my_documents without alias', () => {
+    const { service } = createService();
+
+    const prepared = (service as any).prepareSafeQuery(
+      'SELECT COUNT(*) AS total FROM my_documents WHERE user_id = $1',
+      42,
+    );
+
+    expect(prepared.safeSql).toContain(
+      'FROM (SELECT * FROM documents WHERE user_id = $1) my_documents',
+    );
+  });
 });
