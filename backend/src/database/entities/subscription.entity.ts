@@ -11,6 +11,8 @@ import {
 import { User } from './user.entity';
 
 export type SubscriptionPlan = 'free' | 'starter' | 'pro' | 'enterprise';
+export type BillingProvider = 'polar' | 'stripe';
+export type BillingStatus = 'active' | 'past_due' | 'canceled' | 'incomplete';
 
 /**
  * Plan limits (documents per month).
@@ -74,6 +76,21 @@ export class Subscription {
   /** Stripe price ID for current plan */
   @Column({ name: 'stripe_price_id', nullable: true })
   stripePriceId: string;
+
+  @Column({ name: 'billing_provider', type: 'varchar', length: 20, default: 'polar' })
+  billingProvider: BillingProvider;
+
+  @Column({ name: 'external_customer_id', nullable: true })
+  externalCustomerId: string;
+
+  @Column({ name: 'external_subscription_id', nullable: true })
+  externalSubscriptionId: string;
+
+  @Column({ name: 'external_price_id', nullable: true })
+  externalPriceId: string;
+
+  @Column({ name: 'billing_status', type: 'varchar', length: 20, nullable: true })
+  billingStatus: BillingStatus | null;
 
   /** Whether the subscription is active */
   @Column({ default: true })

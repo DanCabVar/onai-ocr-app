@@ -4,13 +4,13 @@ import { Subscription } from '../database/entities/subscription.entity';
 import { Document } from '../database/entities/document.entity';
 import { SubscriptionsService } from './subscriptions.service';
 import { SubscriptionsController } from './subscriptions.controller';
-import { StripeModule } from '../stripe/stripe.module';
 import { AuthModule } from '../auth/auth.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Subscription, Document]),
-    StripeModule,
+    BillingModule,
     AuthModule,
   ],
   controllers: [SubscriptionsController],

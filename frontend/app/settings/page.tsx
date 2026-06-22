@@ -40,6 +40,9 @@ interface Subscription {
   documentsUsed: number
   documentsLimit: number
   price: number
+  billingProvider?: "polar" | "stripe"
+  canSelfManageBilling?: boolean
+  billingStatus?: string
 }
 
 interface Plan {
@@ -113,6 +116,7 @@ export default function SettingsPage() {
   const [plans, setPlans] = useState<Plan[]>(DEFAULT_PLANS)
   const [loadingSub, setLoadingSub] = useState(false)
   const [upgradingPlan, setUpgradingPlan] = useState<string | null>(null)
+  const [openingPortal, setOpeningPortal] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -142,6 +146,9 @@ export default function SettingsPage() {
         documentsUsed: data.docsUsed ?? data.documentsUsed ?? 0,
         documentsLimit: data.docsLimit === -1 ? Infinity : (data.docsLimit ?? data.documentsLimit ?? 50),
         price: data.price ?? 0,
+        billingProvider: data.billingProvider,
+        canSelfManageBilling: data.canSelfManageBilling,
+        billingStatus: data.billingStatus,
       })
     } catch {
       // Use defaults if endpoint fails
@@ -150,6 +157,9 @@ export default function SettingsPage() {
         documentsUsed: 0,
         documentsLimit: 50,
         price: 0,
+        billingProvider: "polar",
+        canSelfManageBilling: false,
+        billingStatus: "incomplete",
       })
     } finally {
       setLoadingSub(false)
@@ -170,7 +180,7 @@ export default function SettingsPage() {
   const handleUpgrade = async (planId: string) => {
     setUpgradingPlan(planId)
     try {
-      const response = await apiClient.post("/stripe/create-checkout", { plan: planId })
+      const response = await apiClient.post("/subscriptions/checkout", { plan: planId })
       const { url } = response.data
       if (url) {
         window.location.href = url
@@ -183,6 +193,24 @@ export default function SettingsPage() {
       toast({ title: "Error", description: msg, variant: "destructive" })
     } finally {
       setUpgradingPlan(null)
+    }
+  }
+
+  const handleOpenBillingPortal = async () => {
+    setOpeningPortal(true)
+    try {
+      const response = await apiClient.post("/subscriptions/portal")
+      const { url } = response.data
+      if (url) {
+        window.location.href = url
+      } else {
+        toast({ title: "Error", description: "No se pudo abrir la gestión de suscripción.", variant: "destructive" })
+      }
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || "No se pudo abrir la gestión de suscripción."
+      toast({ title: "Error", description: msg, variant: "destructive" })
+    } finally {
+      setOpeningPortal(false)
     }
   }
 
@@ -445,7 +473,18 @@ export default function SettingsPage() {
                           : `$${subscription.price}/mes`}
                       </span>
                     </div>
+                    {subscription.plan !== "FREE" && subscription.canSelfManageBilling && (
+                      <Button variant="outline" onClick={handleOpenBillingPortal} disabled={openingPortal}>
+                        {openingPortal && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Gestionar suscripción
+                      </Button>
+                    )}
                   </div>
+                  {subscription.billingProvider === "stripe" && (
+                    <p className="text-xs text-muted-foreground">
+                      Suscripción legacy en Stripe: se mantendrá activa hasta su vencimiento o cambio de plan.
+                    </p>
+                  )}
 
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
