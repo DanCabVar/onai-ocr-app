@@ -2,6 +2,8 @@ import { ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { SqlRagService } from './sql-rag.service';
+import { QueryIntentService } from './query-intent.service';
+import { FieldResolutionService } from './field-resolution.service';
 
 jest.mock('@google/generative-ai', () => ({
   GoogleGenerativeAI: jest.fn().mockImplementation(() => ({
@@ -39,6 +41,8 @@ describe('SqlRagService tenant isolation', () => {
       dataSource,
       documentRepository,
       documentTypeRepository,
+      new QueryIntentService(),
+      new FieldResolutionService(),
     );
 
     return { service, queryRunner };

@@ -1,68 +1,68 @@
-# T28 — Calidad y consistencia del chatbot documental
+# T28 ï¿½ Calidad y consistencia del chatbot documental
 
 ## Estado inicial
 
-Spec creado a partir de la validación QA de `T20` en junio 2026.
+Spec creado a partir de la validaciï¿½n QA de `T20` en junio 2026.
 
-## Motivación
+## Motivaciï¿½n
 
-Los ajustes recientes mejoraron el chat, pero la validación manual mostró que el problema real excede el alcance del PoC híbrido con grafo:
+Los ajustes recientes mejoraron el chat, pero la validaciï¿½n manual mostrï¿½ que el problema real excede el alcance del PoC hï¿½brido con grafo:
 
-- ambigüedad entre campos relacionados;
+- ambigï¿½edad entre campos relacionados;
 - dependencia alta del phrasing del usuario;
-- duplicados o mezclas de campos bajo una misma intención semántica;
+- duplicados o mezclas de campos bajo una misma intenciï¿½n semï¿½ntica;
 - fragilidad ante documentos nuevos.
 
-## Cierre de la iteración previa
+## Cierre de la iteraciï¿½n previa
 
-La iteración actual se cierra dejando:
+La iteraciï¿½n actual se cierra dejando:
 
-- `T20` con validación QA parcial OK;
-- mejoras puntuales en follow-ups, fechas, tipos y números de orden;
-- pendiente semántica abierta en resolución robusta de proveedor y otras entidades relacionadas;
-- decisión explícita de no seguir parchando caso a caso dentro de `T20`.
+- `T20` con validaciï¿½n QA parcial OK;
+- mejoras puntuales en follow-ups, fechas, tipos y nï¿½meros de orden;
+- pendiente semï¿½ntica abierta en resoluciï¿½n robusta de proveedor y otras entidades relacionadas;
+- decisiï¿½n explï¿½cita de no seguir parchando caso a caso dentro de `T20`.
 
 ## Primeros insumos QA
 
-Casos observados durante la validación:
+Casos observados durante la validaciï¿½n:
 
-- follow-ups sobre `Yolito` mejoran con contexto, pero `proveedor` puede mezclar nombre/rut/correo/teléfono;
-- consultas por números de orden pueden traer valores vacíos o múltiples coincidencias si no se filtran semánticamente;
-- tipos documentales ya muestran un comportamiento más sólido que proveedor/número OC;
-- los OCR/datos extraídos muestran que los valores correctos existen en la plataforma, por lo que el gap es de interpretación/orquestación del chat y no de OCR base.
+- follow-ups sobre `Yolito` mejoran con contexto, pero `proveedor` puede mezclar nombre/rut/correo/telï¿½fono;
+- consultas por nï¿½meros de orden pueden traer valores vacï¿½os o mï¿½ltiples coincidencias si no se filtran semï¿½nticamente;
+- tipos documentales ya muestran un comportamiento mï¿½s sï¿½lido que proveedor/nï¿½mero OC;
+- los OCR/datos extraï¿½dos muestran que los valores correctos existen en la plataforma, por lo que el gap es de interpretaciï¿½n/orquestaciï¿½n del chat y no de OCR base.
 
 ## Plan operativo propuesto
 
-### Fase 1 — Benchmark y catálogo
+### Fase 1 ï¿½ Benchmark y catï¿½logo
 
 1. Definir benchmark QA base con 15-20 preguntas versionadas.
-2. Clasificar cada pregunta por intención.
+2. Clasificar cada pregunta por intenciï¿½n.
 3. Marcar expected answer y tolerancias.
 4. Separar preguntas simples, multi-turno y ambiguas.
 
-### Fase 2 — Resolución semántica
+### Fase 2 ï¿½ Resoluciï¿½n semï¿½ntica
 
 1. Crear matriz `campo canonico -> labels -> sinonimos -> exclusiones`.
-2. Priorizar campos de nombre por sobre rut/correo/teléfono/dirección.
-3. Agregar limpieza semántica post-query.
-4. Evitar duplicados y valores vacíos de forma centralizada.
+2. Priorizar campos de nombre por sobre rut/correo/telï¿½fono/direcciï¿½n.
+3. Agregar limpieza semï¿½ntica post-query.
+4. Evitar duplicados y valores vacï¿½os de forma centralizada.
 
-### Fase 3 — Orquestación y fallback
+### Fase 3 ï¿½ Orquestaciï¿½n y fallback
 
-1. Definir qué preguntas pasan por ruta determinística.
-2. Definir qué preguntas pasan por SQL-RAG generativo.
-3. Definir señales de fallback y logging útil.
-4. Medir latencia y precisión por estrategia.
+1. Definir quï¿½ preguntas pasan por ruta determinï¿½stica.
+2. Definir quï¿½ preguntas pasan por SQL-RAG generativo.
+3. Definir seï¿½ales de fallback y logging ï¿½til.
+4. Medir latencia y precisiï¿½n por estrategia.
 
-### Fase 4 — Regresiones
+### Fase 4 ï¿½ Regresiones
 
-1. Agregar regresiones automatizadas por intención crítica.
+1. Agregar regresiones automatizadas por intenciï¿½n crï¿½tica.
 2. Repetir benchmark QA sobre documentos distintos al dataset actual.
-3. Consolidar evidencia final para cierre o división adicional del trabajo.
+3. Consolidar evidencia final para cierre o divisiï¿½n adicional del trabajo.
 
-## Arranque sugerido para la próxima sesión
+## Arranque sugerido para la prï¿½xima sesiï¿½n
 
-### Paso 1 — Benchmark inicial
+### Paso 1 ï¿½ Benchmark inicial
 
 Crear un archivo versionado con al menos estas columnas:
 
@@ -76,20 +76,20 @@ Crear un archivo versionado con al menos estas columnas:
 - `source_documents`
 - `status`
 
-### Paso 2 — Primer lote de preguntas
+### Paso 2 ï¿½ Primer lote de preguntas
 
 Armar 15 preguntas base repartidas entre:
 
 - conteos;
 - tipos de documento;
-- fechas de emisión;
-- números de orden de compra;
+- fechas de emisiï¿½n;
+- nï¿½meros de orden de compra;
 - proveedor / cliente / comprador;
 - follow-ups multi-turno.
 
-### Paso 3 — Matriz semántica base
+### Paso 3 ï¿½ Matriz semï¿½ntica base
 
-Definir una primera tabla para intenciones críticas:
+Definir una primera tabla para intenciones crï¿½ticas:
 
 - `proveedor`
 - `cliente`
@@ -102,21 +102,136 @@ Y para cada una:
 
 - campos permitidos;
 - campos excluidos;
-- sinónimos/labels frecuentes;
-- reglas de deduplicación.
+- sinï¿½nimos/labels frecuentes;
+- reglas de deduplicaciï¿½n.
 
-### Paso 4 — Primera regresión automatizada
+### Paso 4 ï¿½ Primera regresiï¿½n automatizada
 
-Agregar regresiones mínimas para:
+Agregar regresiones mï¿½nimas para:
 
-- `proveedor` no mezcla correo/rut/teléfono;
-- `números de OC` no devuelve vacíos ni valores fuera del tipo correcto;
+- `proveedor` no mezcla correo/rut/telï¿½fono;
+- `nï¿½meros de OC` no devuelve vacï¿½os ni valores fuera del tipo correcto;
 - `tipos de documento` deduplica correctamente;
-- follow-ups conservan contexto útil sin contaminar la entidad buscada.
+- follow-ups conservan contexto ï¿½til sin contaminar la entidad buscada.
 
-## Entregables de la próxima sesión
+## Entregables de la prï¿½xima sesiï¿½n
 
 - benchmark inicial versionado;
-- matriz de resolución de campos;
+- matriz de resoluciï¿½n de campos;
 - propuesta de `query-intent.service.ts` y `field-resolution.service.ts`;
 - primer set de regresiones automatizadas.
+
+## Avance dejado preparado
+
+- benchmark inicial creado en `docs/04_trabajo/T28_calidad_chatbot_documental/benchmark_v1.csv`
+- matriz semï¿½ntica base creada en `docs/04_trabajo/T28_calidad_chatbot_documental/field_semantics_v1.md`
+
+## Prï¿½ximo paso recomendado
+
+Ir directo a implementaciï¿½n de Fase 2:
+
+1. crear `query-intent.service.ts`;
+2. crear `field-resolution.service.ts`;
+3. mover reglas actuales de proveedor/OC/fechas a esa capa;
+4. convertir los casos `T28-003` a `T28-007` en regresiones automatizadas.
+
+## ImplementaciÃ³n Fases 2 y 3 â€” 2026-06-22
+
+### QuÃ© se construyÃ³
+
+Se introdujo una capa explÃ­cita de intenciÃ³n + resoluciÃ³n semÃ¡ntica para el
+chat documental, desacoplando la lÃ³gica determinÃ­stica del orquestador SQL-RAG:
+
+- `backend/src/chat/query-intent.service.ts`: clasifica la pregunta (con o sin
+  contexto multi-turno) en una intenciÃ³n del catÃ¡logo y extrae/depura la
+  entidad rastreada. No genera SQL. Incluye:
+  - catÃ¡logo de intenciones con precedencia explÃ­cita (fecha â†’ conteo â†’ total â†’
+    proveedor/cliente â†’ orden de compra â†’ tipos);
+  - detecciÃ³n de **nombre de archivo** como ancla precisa de un documento
+    puntual (`OC_Yolito2.pdf`);
+  - depuraciÃ³n de entidad (`cleanEntity` + stopwords) que reduce capturas
+    ruidosas del patrÃ³n de respaldo "de <â€¦>" (ej. "la orden de compra de
+    Yolito2" â†’ "yolito2"; "compra tengo de Sodimac" â†’ "sodimac").
+- `backend/src/chat/field-resolution.service.ts`: materializa la matriz de
+  `field_semantics_v1.md` como reglas de campo canÃ³nico (grupos de coincidencia
+  por `name`/`label` + tÃ©rminos de exclusiÃ³n) y construye las clÃ¡usulas SQL
+  JSONB (match de campo, exclusiÃ³n de valores vacÃ­os, anclaje por entidad,
+  match exacto de filename sin arrastrar prefijos).
+- `backend/src/chat/sql-rag.service.ts`: `buildDeterministicFieldQuery` delega
+  en ambos servicios y arma cada consulta vÃ­a helpers por intenciÃ³n. La lÃ³gica
+  inline de proveedor/OC/fechas/conteo/tipos quedÃ³ eliminada del servicio.
+
+### Cobertura determinÃ­stica (intenciones activas)
+
+| IntenciÃ³n | Con entidad | Sin entidad (tenant) |
+|---|---|---|
+| `count_documents` | sÃ­ | sÃ­ (agregado) |
+| `list_document_types` | sÃ­ | sÃ­ (agregado) |
+| `list_supplier_names` | sÃ­ | sÃ­ (agregado) |
+| `list_customer_names` | sÃ­ | sÃ­ (agregado) |
+| `list_issue_dates` | sÃ­ | no (cae a generativo) |
+| `list_order_numbers` | sÃ­ | no |
+| `list_totals` | sÃ­ | no |
+
+`buyer_name` y `dispatch_order_number` quedan en la matriz como contrato listo,
+sin cablear (no hay caso de benchmark que las exija de forma limpia).
+
+### Fase 3 â€” OrquestaciÃ³n y trazabilidad
+
+- Ãrbol de fallback explÃ­cito: **aclaraciÃ³n â†’ determinÃ­stica â†’ generativa (LLM)
+  â†’ general (conversacional) â†’ mensaje de error**.
+- DetecciÃ³n de **statement de aclaraciÃ³n** ("el nombre del comprador es X"):
+  responde con acknowledgement contextual y conserva el contexto en lugar de
+  ejecutar SQL que devolverÃ­a "sin resultados" (cierra `T28-015`).
+- `SqlRagResult`/`ChatQueryResult` exponen `strategy`
+  (`deterministic|generative|general`) e `intent`, y se loguea
+  `route user=â€¦ intent=â€¦ strategy=â€¦ rows=â€¦` por consulta, para depurar y
+  preparar la mediciÃ³n por estrategia en QA. No se exponen internals al usuario.
+
+### Decisiones de diseÃ±o
+
+- **SeparaciÃ³n estricta**: intenciÃ³n (semÃ¡ntica, sin SQL) vs resoluciÃ³n
+  (SQL/acceso a datos). El `SqlRagService` solo orquesta y ensambla.
+- **Agregados seguros sin entidad**: solo conteo/tipos/proveedores/clientes se
+  resuelven a nivel de tenant cuando no hay entidad; fechas/Ã³rdenes/totales sin
+  entidad siguen cayendo a generativo para no volcar todo el tenant.
+- **Exclusiones explÃ­citas anti-mezcla**: proveedor exige `nombre`+`proveedor`
+  y excluye `rut`/`correo`/`telefono`/`fax`/`direccion`; OC excluye el
+  correlativo interno `numero_oc_mts` (forbidden `054_00655119`) y se restringe
+  al tipo `Orden de Compra`; total excluye `neto` (forbidden `559.200`).
+- **No sobreajuste a Yolito**: alias `total_documentos_yolito` â†’ `total_documentos`;
+  reglas por campo canÃ³nico/semÃ¡ntica, no por dataset.
+- **Aislamiento multi-tenant intacto**: toda consulta mantiene `d.user_id = $1`,
+  el reescritor de vistas tenant-scoped y el `set_config` RLS (sin cambios).
+
+### Tests ejecutados
+
+- `backend/src/chat/t28-benchmark-regressions.spec.ts` (nuevo): regresiones
+  para `T28-001`, `T28-002` y `T28-003`..`T28-013` que validan la forma
+  semÃ¡ntica del SQL determinÃ­stico (dedupe, tipo correcto, exclusiÃ³n de
+  campos/valores prohibidos, anclaje exacto por archivo o entidad depurada,
+  agregados sin filtro ruidoso, filtro `$1`).
+- `backend/src/chat/query-intent.service.spec.ts` (nuevo): tests unitarios de
+  precedencia de intenciones, anclaje por archivo, depuraciÃ³n de entidad y
+  detecciÃ³n de statements de aclaraciÃ³n.
+- `cd backend && pnpm test` â†’ **7 suites / 42 tests en verde** (incluye
+  `chat.service.spec.ts` y `sql-rag.service.spec.ts`).
+- `cd backend && pnpm run build` â†’ OK.
+
+### Estado de desarrollo
+
+Desarrollo determinÃ­stico de T28 **completo** para todos los casos del benchmark
+salvo el adversarial `T28-014`. La validaciÃ³n funcional restante es en vivo
+(QA), por diseÃ±o.
+
+### Pendiente â€” Fase 4 (validaciÃ³n en QA, requiere ambiente con datos)
+
+- **Benchmark QA en vivo**: ejecutar `benchmark_v1.csv` contra datos reales y
+  â‰¥3 tipos documentales; marcar los casos del CSV de `draft` â†’ validado.
+- MediciÃ³n de **latencia por estrategia** (ya hay log `strategy`) y ranking fino
+  cuando coexisten varios valores candidatos: requieren trÃ¡fico/datos reales.
+- `T28-014` (ambigÃ¼edad por dominio/correo, ej. "proveedor de Grupo TX"):
+  decisiÃ³n de diseÃ±o deliberada â€” los casos adversariales se resuelven por la
+  ruta generativa (que puede matizar) y se evalÃºan en QA; no se fuerzan reglas
+  rÃ­gidas, evitando el sobreajuste que advierte el propio spec. Si la data de un
+  tenant lo amerita, se agrega un guard data-driven con su regresiÃ³n.

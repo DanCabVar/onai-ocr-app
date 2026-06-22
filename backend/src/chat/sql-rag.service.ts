@@ -10,6 +10,8 @@ import { Repository, DataSource } from 'typeorm';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Document } from '../database/entities/document.entity';
 import { DocumentType } from '../database/entities/document-type.entity';
+import { QueryIntentService, ChatIntent } from './query-intent.service';
+import { FieldResolutionService } from './field-resolution.service';
 
 /** Maximum rows returned from a single query */
 const MAX_ROWS = 1000;
@@ -33,10 +35,20 @@ const FORBIDDEN_PATTERNS = [
   /\b(from|join)\s+(?:pg_catalog|information_schema)\b/i, // system catalogs
 ];
 
+/**
+ * Estrategia que respondió la consulta (T28 — Fase 3, trazabilidad):
+ * - `deterministic`: ruta de intención/resolución de campos.
+ * - `generative`: SQL generado por el LLM.
+ * - `general`: respuesta conversacional sin SQL.
+ */
+export type ChatStrategy = 'deterministic' | 'generative' | 'general';
+
 export interface SqlRagResult {
   answer: string;
   query?: string;
   data?: Record<string, any>[];
+  strategy?: ChatStrategy;
+  intent?: ChatIntent;
 }
 
 interface SchemaCacheEntry {
@@ -60,6 +72,8 @@ export class SqlRagService {
     private readonly documentRepository: Repository<Document>,
     @InjectRepository(DocumentType)
     private readonly documentTypeRepository: Repository<DocumentType>,
+    private readonly queryIntent: QueryIntentService,
+    private readonly fieldResolution: FieldResolutionService,
   ) {
     const apiKey = this.configService.get<string>('GOOGLE_AI_API_KEY');
     if (!apiKey) {
@@ -84,39 +98,68 @@ export class SqlRagService {
       // 1. Build (or retrieve cached) schema context for this user
       const schemaContext = await this.getSchemaContext(userId);
 
-      // 2. Prefer deterministic SQL for common field/entity follow-ups
+      // 2. Resolve intent up front for traceability of the chosen route
+      const resolved = this.queryIntent.resolve(question);
+
+      // 2b. Clarification statement ("el nombre del comprador es X"): acknowledge
+      //     and keep context instead of running SQL that returns no rows (T28-015)
+      if (this.queryIntent.isClarificationStatement(resolved.currentQuestion)) {
+        this.logger.log(
+          `SQL RAG route user=${userId} intent=${resolved.intent} strategy=clarification`,
+        );
+        return {
+          answer: this.buildClarificationAck(),
+          strategy: 'general',
+          intent: resolved.intent,
+        };
+      }
+
+      // 3. Prefer deterministic SQL for common field/entity follow-ups
       const deterministicSql = this.buildDeterministicFieldQuery(question);
 
-      // 3. Generate SQL via Gemini (uses $1 placeholder for user_id) when needed
+      // 4. Generate SQL via Gemini (uses $1 placeholder for user_id) when needed
       const generatedSql =
         deterministicSql ||
         (await this.generateSql(question, schemaContext, userId));
 
-      // 3b. If no SQL (general question), answer conversationally
+      // 4b. If no SQL (general question), answer conversationally
       if (!generatedSql) {
         const answer = await this.answerGeneral(question, schemaContext);
-        return { answer };
+        this.logger.log(
+          `SQL RAG route user=${userId} intent=${resolved.intent} strategy=general`,
+        );
+        return { answer, strategy: 'general', intent: resolved.intent };
       }
 
-      // 4. Validate the SQL
+      const strategy: ChatStrategy = deterministicSql
+        ? 'deterministic'
+        : 'generative';
+
+      // 5. Validate the SQL
       this.validateSql(generatedSql);
 
-      // 5. Enforce user_id filter — replace placeholder and execute with param
+      // 6. Enforce user_id filter — replace placeholder and execute with param
       const { safeSql, params } = this.prepareSafeQuery(
         generatedSql,
         userId,
       );
 
-      // 6. Execute query with timeout
+      // 7. Execute query with timeout
       const rows = await this.executeSql(safeSql, params);
 
-      // 7. Format response — skip LLM for small result sets
+      // 8. Format response — skip LLM for small result sets
       const answer = await this.formatResponse(question, generatedSql, rows);
+
+      this.logger.log(
+        `SQL RAG route user=${userId} intent=${resolved.intent} strategy=${strategy} rows=${rows.length}`,
+      );
 
       return {
         answer,
         query: generatedSql,
         data: rows,
+        strategy,
+        intent: resolved.intent,
       };
     } catch (error) {
       this.logger.error(`SQL RAG error: ${error.message}`, error.stack);
@@ -289,214 +332,185 @@ IMPORTANTE: user_id siempre se pasa como parámetro $1. Usa $1 en WHERE, nunca e
       .toLowerCase();
   }
 
-  private buildDeterministicFieldQuery(question: string): string | null {
-    const normalized = this.normalizeText(question);
-    const currentQuestion = this.extractCurrentQuestion(question);
-    const normalizedCurrentQuestion = this.normalizeText(currentQuestion);
-    const entity = this.extractTrackedEntity(question);
+  /**
+   * Intenciones de listado/conteo que son seguras de responder a nivel de
+   * tenant cuando NO hay entidad rastreada ("¿cuántos documentos tengo?",
+   * "¿qué tipos tengo?", "¿qué proveedores aparecen?"). Las intenciones que
+   * dependen de una entidad/documento puntual (fechas, números de orden,
+   * totales) no se incluyen para no volcar todo el tenant.
+   */
+  private static readonly TENANT_AGGREGATE_INTENTS: ReadonlySet<ChatIntent> =
+    new Set<ChatIntent>([
+      'count_documents',
+      'list_document_types',
+      'list_supplier_names',
+      'list_customer_names',
+    ]);
 
-    if (!entity) {
+  /**
+   * Ruta determinística para consultas de alta frecuencia (T28 — Fases 2/3).
+   *
+   * Orquesta la capa de intención (`QueryIntentService`) y la de resolución de
+   * campos (`FieldResolutionService`). Si no hay entidad, solo resuelve
+   * intenciones agregadas seguras a nivel de tenant; en cualquier otro caso
+   * devuelve null y la consulta cae al fallback generativo (SQL-RAG con
+   * Gemini), preservando el comportamiento previo.
+   */
+  private buildDeterministicFieldQuery(question: string): string | null {
+    const { intent, entity } = this.queryIntent.resolve(question);
+
+    let entityConditions: string | null = null;
+    if (entity) {
+      const entityTerms = this.fieldResolution.buildEntitySearchTerms(entity);
+      if (entityTerms.length === 0) {
+        return null;
+      }
+      entityConditions =
+        this.fieldResolution.buildEntityMatchConditions(entityTerms);
+    } else if (!SqlRagService.TENANT_AGGREGATE_INTENTS.has(intent)) {
       return null;
     }
 
-    const entityTerms = this.buildEntitySearchTerms(entity);
-    const entityConditions = this.buildEntityMatchConditions(entityTerms);
+    switch (intent) {
+      case 'list_issue_dates':
+        return this.buildIssueDatesSql(entityConditions);
+      case 'count_documents':
+        return this.buildCountSql(entityConditions);
+      case 'list_order_numbers':
+        return this.buildOrderNumbersSql(entityConditions);
+      case 'list_supplier_names':
+        return this.buildSupplierSql(entityConditions);
+      case 'list_customer_names':
+        return this.buildCustomerSql(entityConditions);
+      case 'list_totals':
+        return this.buildTotalsSql(entityConditions);
+      case 'list_document_types':
+        return this.buildDocumentTypesSql(entityConditions);
+      default:
+        return null;
+    }
+  }
 
-    if (normalizedCurrentQuestion.includes('fecha') && normalizedCurrentQuestion.includes('emision')) {
-      return `
+  /** Cláusula AND de filtro por entidad; vacía para consultas de tenant. */
+  private entityFilter(entityConditions: string | null): string {
+    return entityConditions ? `\n  AND (${entityConditions})` : '';
+  }
+
+  /**
+   * Respuesta a un statement de aclaración: conserva el contexto e invita a la
+   * siguiente consulta, sin afirmar "sin resultados" (T28-015).
+   */
+  private buildClarificationAck(): string {
+    return (
+      'Entendido, lo tomo en cuenta para tu próxima consulta. ' +
+      '¿Qué te gustaría saber? Por ejemplo: fechas de emisión, tipos de ' +
+      'documento, números de orden de compra o el proveedor.'
+    );
+  }
+
+  private buildIssueDatesSql(entityConditions: string | null): string {
+    const fechaClause = this.fieldResolution.buildFieldMatchClause(
+      'fecha',
+      'issue_date',
+    );
+    return `
 SELECT DISTINCT
   d.filename AS filename,
   fecha->>'value' AS fecha_emision
 FROM my_documents d
 CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') fecha
-WHERE d.user_id = $1
-  AND (${entityConditions})
-  AND (
-    lower(fecha->>'name') LIKE '%fecha_emision%'
-    OR lower(fecha->>'label') LIKE '%fecha de emision%'
-  )
+WHERE d.user_id = $1${this.entityFilter(entityConditions)}
+  AND ${fechaClause}
 ORDER BY d.filename, fecha_emision`;
-    }
+  }
 
-    if (
-      normalizedCurrentQuestion.includes('cuanto') ||
-      normalizedCurrentQuestion.includes('cuantos')
-    ) {
-      return `
-SELECT COUNT(DISTINCT d.id) AS total_documentos_yolito
+  private buildCountSql(entityConditions: string | null): string {
+    return `
+SELECT COUNT(DISTINCT d.id) AS total_documentos
 FROM my_documents d
-WHERE d.user_id = $1
-  AND (${entityConditions})`;
-    }
+WHERE d.user_id = $1${this.entityFilter(entityConditions)}`;
+  }
 
-    if (
-      normalizedCurrentQuestion.includes('numero') &&
-      normalizedCurrentQuestion.includes('orden')
-    ) {
-      return `
+  private buildOrderNumbersSql(entityConditions: string | null): string {
+    const ordenClause = this.fieldResolution.buildFieldMatchClause(
+      'orden',
+      'purchase_order_number',
+    );
+    const nonEmpty = this.fieldResolution.buildNonEmptyValueClause('orden');
+    return `
 SELECT DISTINCT
   d.filename AS filename,
   orden->>'value' AS numero_orden_compra
 FROM my_documents d
 JOIN my_document_types dt ON d.document_type_id = dt.id
 CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') orden
-WHERE d.user_id = $1
-  AND (${entityConditions})
+WHERE d.user_id = $1${this.entityFilter(entityConditions)}
   AND lower(dt.name) LIKE '%orden de compra%'
-  AND (
-    lower(orden->>'name') LIKE '%numero_orden%'
-    OR lower(orden->>'name') LIKE '%numero_oc%'
-    OR lower(orden->>'label') LIKE '%numero de orden%'
-  )
-  AND trim(coalesce(orden->>'value', '')) <> ''
-  AND lower(trim(coalesce(orden->>'value', ''))) NOT IN ('sin valor', '—', '-')
+  AND ${ordenClause}
+  AND ${nonEmpty}
 ORDER BY d.filename, numero_orden_compra`;
-    }
+  }
 
-    if (normalizedCurrentQuestion.includes('proveedor')) {
-      return `
+  private buildSupplierSql(entityConditions: string | null): string {
+    const proveedorClause = this.fieldResolution.buildFieldMatchClause(
+      'proveedor',
+      'supplier_name',
+    );
+    const nonEmpty = this.fieldResolution.buildNonEmptyValueClause('proveedor');
+    return `
 SELECT DISTINCT
   proveedor->>'value' AS proveedor
 FROM my_documents d
 CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') proveedor
-WHERE d.user_id = $1
-  AND (${entityConditions})
-  AND (
-    (
-      lower(proveedor->>'name') LIKE '%nombre%'
-      AND lower(proveedor->>'name') LIKE '%proveedor%'
-    )
-    OR (
-      lower(proveedor->>'label') LIKE '%nombre%'
-      AND lower(proveedor->>'label') LIKE '%proveedor%'
-    )
-  )
-  AND trim(coalesce(proveedor->>'value', '')) <> ''
-  AND lower(trim(coalesce(proveedor->>'value', ''))) NOT IN ('sin valor', '—', '-')
+WHERE d.user_id = $1${this.entityFilter(entityConditions)}
+  AND ${proveedorClause}
+  AND ${nonEmpty}
 ORDER BY proveedor`;
-    }
+  }
 
-    if (
-      normalizedCurrentQuestion.includes('tipo') &&
-      normalizedCurrentQuestion.includes('document')
-    ) {
-      return `
+  private buildCustomerSql(entityConditions: string | null): string {
+    const clienteClause = this.fieldResolution.buildFieldMatchClause(
+      'cliente',
+      'customer_name',
+    );
+    const nonEmpty = this.fieldResolution.buildNonEmptyValueClause('cliente');
+    return `
+SELECT DISTINCT
+  cliente->>'value' AS cliente
+FROM my_documents d
+CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') cliente
+WHERE d.user_id = $1${this.entityFilter(entityConditions)}
+  AND ${clienteClause}
+  AND ${nonEmpty}
+ORDER BY cliente`;
+  }
+
+  private buildTotalsSql(entityConditions: string | null): string {
+    const totalClause = this.fieldResolution.buildFieldMatchClause(
+      'tot',
+      'monetary_total',
+    );
+    const nonEmpty = this.fieldResolution.buildNonEmptyValueClause('tot');
+    return `
+SELECT DISTINCT
+  d.filename AS filename,
+  tot->>'value' AS total
+FROM my_documents d
+CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') tot
+WHERE d.user_id = $1${this.entityFilter(entityConditions)}
+  AND ${totalClause}
+  AND ${nonEmpty}
+ORDER BY d.filename, total`;
+  }
+
+  private buildDocumentTypesSql(entityConditions: string | null): string {
+    return `
 SELECT DISTINCT
   dt.name AS tipo_documento
 FROM my_documents d
 JOIN my_document_types dt ON d.document_type_id = dt.id
-WHERE d.user_id = $1
-  AND (${entityConditions})
+WHERE d.user_id = $1${this.entityFilter(entityConditions)}
 ORDER BY tipo_documento`;
-    }
-
-    return null;
-  }
-
-  private extractCurrentQuestion(question: string): string {
-    const match = question.match(/Pregunta actual del usuario:\s*([\s\S]*)$/i);
-    return match?.[1]?.trim() || question.trim();
-  }
-
-  private extractTrackedEntity(question: string): string | null {
-    const patterns = [
-      /nombre del (?:comprador|proveedor|emisor|cliente)[^.\n]* es ([^\n.]+)/i,
-      /documentos de ([^\n?.]+)/i,
-      /de ([A-Za-zÁÉÍÓÚáéíóúÑñ0-9 .&_-]{3,})/i,
-    ];
-
-    for (const pattern of patterns) {
-      const match = question.match(pattern);
-      const value = match?.[1]?.trim();
-      if (value && !this.isGenericEntityPhrase(value)) {
-        return value;
-      }
-    }
-
-    return null;
-  }
-
-  private isGenericEntityPhrase(value: string): boolean {
-    const normalized = this.normalizeText(value)
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!normalized) {
-      return true;
-    }
-
-    const genericPhrases = [
-      'orden de compra',
-      'orden de despacho',
-      'proveedor',
-      'comprador',
-      'cliente',
-      'emisor',
-      'tipo de documento',
-      'tipos de documentos',
-      'fechas de emision',
-      'numero de orden',
-      'numeros de orden de compra',
-    ];
-
-    return genericPhrases.includes(normalized);
-  }
-
-  private buildEntityMatchConditions(entityTerms: string[]): string {
-    const termClauses = entityTerms.flatMap((term) => {
-      const termLike = this.escapeSqlLike(term);
-      return [
-        `lower(d.filename) LIKE '%${termLike}%'`,
-        `lower(coalesce(d.ocr_raw_text, '')) LIKE '%${termLike}%'`,
-        `lower(coalesce(d.extracted_data->>'summary', '')) LIKE '%${termLike}%'`,
-        `lower(coalesce(d.inferred_data->>'summary', '')) LIKE '%${termLike}%'`,
-        `EXISTS (
-          SELECT 1
-          FROM jsonb_array_elements(coalesce(d.extracted_data->'fields', '[]'::jsonb)) f
-          WHERE lower(coalesce(f->>'value', '')) LIKE '%${termLike}%'
-        )`,
-        `EXISTS (
-          SELECT 1
-          FROM jsonb_array_elements(coalesce(d.inferred_data->'key_fields', '[]'::jsonb)) f
-          WHERE lower(coalesce(f->>'value', '')) LIKE '%${termLike}%'
-        )`,
-      ];
-    });
-
-    return termClauses.join('\n      OR ');
-  }
-
-  private buildEntitySearchTerms(entity: string): string[] {
-    const normalized = this.normalizeText(entity)
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!normalized) {
-      return [];
-    }
-
-    const words = normalized.split(' ').filter((word) => word.length >= 4);
-    const terms = new Set<string>();
-
-    terms.add(normalized);
-
-    if (words.length > 0) {
-      terms.add(words[0]);
-    }
-
-    if (words.length > 1) {
-      terms.add(`${words[0]} ${words[1]}`);
-    }
-
-    words.slice(0, 4).forEach((word) => terms.add(word));
-
-    return Array.from(terms);
-  }
-
-  private escapeSqlLike(value: string): string {
-    return this.normalizeText(value).replace(/'/g, "''").trim();
   }
 
   /**
