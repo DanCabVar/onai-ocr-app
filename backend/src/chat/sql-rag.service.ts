@@ -327,7 +327,7 @@ Solo la query SQL, sin backticks ni explicaciones. Si no puedes, responde: NO_SQ
     sql: string,
     userId: number,
   ): { safeSql: string; params: any[] } {
-    let safeSql = sql;
+    let safeSql = this.rewriteTenantViewsAsScopedSubqueries(sql);
 
     if (!/\bLIMIT\b/i.test(safeSql)) {
       safeSql = safeSql + ` LIMIT ${MAX_ROWS}`;
@@ -337,6 +337,26 @@ Solo la query SQL, sin backticks ni explicaciones. Si no puedes, responde: NO_SQ
       safeSql,
       params: [userId],
     };
+  }
+
+  /**
+   * Rewrites logical tenant views into tenant-scoped subqueries.
+   *
+   * Why:
+   * - keeps the LLM contract simple (`my_documents`, `my_document_types`)
+   * - preserves tenant isolation even if the DB views were not applied yet
+   * - avoids production/QA drift due to manual RLS/view rollout gaps
+   */
+  private rewriteTenantViewsAsScopedSubqueries(sql: string): string {
+    return sql
+      .replace(
+        /\bmy_documents\b/gi,
+        '(SELECT * FROM documents WHERE user_id = $1)',
+      )
+      .replace(
+        /\bmy_document_types\b/gi,
+        '(SELECT * FROM document_types WHERE user_id = $1)',
+      );
   }
 
   /**

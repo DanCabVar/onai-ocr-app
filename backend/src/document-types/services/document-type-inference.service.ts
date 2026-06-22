@@ -626,7 +626,9 @@ JSON only, sin texto adicional.`;
     }
 
     // Load existing types for matching
-    const existingTypes = await this.documentTypeRepository.find();
+    const existingTypes = await this.documentTypeRepository.find({
+      where: { userId: user.id },
+    });
 
     const reportProgress = (step: string, progress: number, message: string) => {
       if (onProgress) onProgress(step, progress, message);
@@ -711,7 +713,9 @@ JSON only, sin texto adicional.`;
   ): Promise<Map<string, { files: Express.Multer.File[]; existingType: DocumentType | null }>> {
     this.logger.warn('⚠️  classifyAndGroupDocuments is deprecated — use inferDocumentTypesFromSamples');
 
-    const existingTypes = await this.documentTypeRepository.find();
+    const existingTypes = await this.documentTypeRepository.find({
+      where: { userId: user.id },
+    });
     const ocrDocs = await this.step1_OCR(files);
     const classifiedDocs = await this.step2_Classify(ocrDocs);
     const groups = await this.step3_Homologate(classifiedDocs, existingTypes);
@@ -799,7 +803,7 @@ JSON only.`;
 
     for (const consolidated of consolidatedTypes) {
       const existingType = await this.documentTypeRepository.findOne({
-        where: { name: consolidated.typeName },
+        where: { name: consolidated.typeName, userId: user.id },
       });
 
       let documentType: DocumentType;
