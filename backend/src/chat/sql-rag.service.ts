@@ -299,8 +299,8 @@ IMPORTANTE: user_id siempre se pasa como parámetro $1. Usa $1 en WHERE, nunca e
       return null;
     }
 
-    const entityLike = this.escapeSqlLike(entity);
-    const entityConditions = this.buildEntityMatchConditions(entityLike);
+    const entityTerms = this.buildEntitySearchTerms(entity);
+    const entityConditions = this.buildEntityMatchConditions(entityTerms);
 
     if (normalizedCurrentQuestion.includes('fecha') && normalizedCurrentQuestion.includes('emision')) {
       return `
@@ -338,21 +338,24 @@ SELECT DISTINCT
   d.filename AS filename,
   orden->>'value' AS numero_orden_compra
 FROM my_documents d
+JOIN my_document_types dt ON d.document_type_id = dt.id
 CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') orden
 WHERE d.user_id = $1
   AND (${entityConditions})
+  AND lower(dt.name) LIKE '%orden de compra%'
   AND (
     lower(orden->>'name') LIKE '%numero_orden%'
     OR lower(orden->>'name') LIKE '%numero_oc%'
     OR lower(orden->>'label') LIKE '%numero de orden%'
   )
+  AND trim(coalesce(orden->>'value', '')) <> ''
+  AND lower(trim(coalesce(orden->>'value', ''))) NOT IN ('sin valor', '—', '-')
 ORDER BY d.filename, numero_orden_compra`;
     }
 
     if (normalizedCurrentQuestion.includes('proveedor')) {
       return `
 SELECT DISTINCT
-  d.filename AS filename,
   proveedor->>'value' AS proveedor
 FROM my_documents d
 CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') proveedor
@@ -362,7 +365,9 @@ WHERE d.user_id = $1
     lower(proveedor->>'name') LIKE '%proveedor%'
     OR lower(proveedor->>'label') LIKE '%proveedor%'
   )
-ORDER BY d.filename, proveedor`;
+  AND trim(coalesce(proveedor->>'value', '')) <> ''
+  AND lower(trim(coalesce(proveedor->>'value', ''))) NOT IN ('sin valor', '—', '-')
+ORDER BY proveedor`;
     }
 
     if (
@@ -397,7 +402,7 @@ ORDER BY tipo_documento`;
     for (const pattern of patterns) {
       const match = question.match(pattern);
       const value = match?.[1]?.trim();
-      if (value) {
+      if (value && !this.isGenericEntityPhrase(value)) {
         return value;
       }
     }
@@ -405,20 +410,83 @@ ORDER BY tipo_documento`;
     return null;
   }
 
-  private buildEntityMatchConditions(entityLike: string): string {
-    return `
-      lower(d.filename) LIKE '%${entityLike}%'
-      OR EXISTS (
-        SELECT 1
-        FROM jsonb_array_elements(d.extracted_data->'fields') f
-        WHERE lower(coalesce(f->>'value', '')) LIKE '%${entityLike}%'
-      )
-      OR EXISTS (
-        SELECT 1
-        FROM jsonb_array_elements(coalesce(d.inferred_data->'key_fields', '[]'::jsonb)) f
-        WHERE lower(coalesce(f->>'value', '')) LIKE '%${entityLike}%'
-      )
-    `;
+  private isGenericEntityPhrase(value: string): boolean {
+    const normalized = this.normalizeText(value)
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized) {
+      return true;
+    }
+
+    const genericPhrases = [
+      'orden de compra',
+      'orden de despacho',
+      'proveedor',
+      'comprador',
+      'cliente',
+      'emisor',
+      'tipo de documento',
+      'tipos de documentos',
+      'fechas de emision',
+      'numero de orden',
+      'numeros de orden de compra',
+    ];
+
+    return genericPhrases.includes(normalized);
+  }
+
+  private buildEntityMatchConditions(entityTerms: string[]): string {
+    const termClauses = entityTerms.flatMap((term) => {
+      const termLike = this.escapeSqlLike(term);
+      return [
+        `lower(d.filename) LIKE '%${termLike}%'`,
+        `lower(coalesce(d.ocr_raw_text, '')) LIKE '%${termLike}%'`,
+        `lower(coalesce(d.extracted_data->>'summary', '')) LIKE '%${termLike}%'`,
+        `lower(coalesce(d.inferred_data->>'summary', '')) LIKE '%${termLike}%'`,
+        `EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(coalesce(d.extracted_data->'fields', '[]'::jsonb)) f
+          WHERE lower(coalesce(f->>'value', '')) LIKE '%${termLike}%'
+        )`,
+        `EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(coalesce(d.inferred_data->'key_fields', '[]'::jsonb)) f
+          WHERE lower(coalesce(f->>'value', '')) LIKE '%${termLike}%'
+        )`,
+      ];
+    });
+
+    return termClauses.join('\n      OR ');
+  }
+
+  private buildEntitySearchTerms(entity: string): string[] {
+    const normalized = this.normalizeText(entity)
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized) {
+      return [];
+    }
+
+    const words = normalized.split(' ').filter((word) => word.length >= 4);
+    const terms = new Set<string>();
+
+    terms.add(normalized);
+
+    if (words.length > 0) {
+      terms.add(words[0]);
+    }
+
+    if (words.length > 1) {
+      terms.add(`${words[0]} ${words[1]}`);
+    }
+
+    words.slice(0, 4).forEach((word) => terms.add(word));
+
+    return Array.from(terms);
   }
 
   private escapeSqlLike(value: string): string {
