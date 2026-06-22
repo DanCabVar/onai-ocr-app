@@ -46,3 +46,17 @@
 2. Ejecutar `db:show` o `db:migrate` en ambiente QA real y guardar evidencia.
 3. Confirmar que producción usa el workflow `deploy-master.yml` canónico y no uno legacy alternativo.
 4. Dejar nota final en `PLAN_MAESTRO.md` / `SPEC_HISTORY.md` tras validación de ambiente.
+
+## Actualización QA 2026-06-21
+
+- Validación QA confirmada: el workflow `Deploy to QA Server` completó exitosamente con migraciones habilitadas.
+- El bootstrap histórico de migraciones se ajustó para tolerar schemas previamente adelantados por `synchronize`.
+- Incidentes corregidos durante la validación QA:
+  1. migración inicial `inferred_data` convertida en idempotente (`IF NOT EXISTS` / `IF EXISTS`);
+  2. migración `AddR2StorageColumns` ajustada para no asumir la existencia de `google_drive_file_id`.
+- Resultado: QA queda desplegando con paso explícito `db:migrate` y la aplicación levanta correctamente después del cambio.
+
+## Estado sugerido tras QA
+
+- Mantener `T26` en `En revisión`.
+- Pendiente para cierre: validación de producción con backup real + migrate y evidencia operativa final.
