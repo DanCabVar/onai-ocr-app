@@ -248,6 +248,52 @@ describe('T28 benchmark regressions (deterministic chat path)', () => {
     expect(sql).toContain("NOT IN ('sin valor', '—', '-')");
   });
 
+  describe('síntesis determinística — el texto no contradice el resultado', () => {
+    const fmt = (intent: string, rows: Record<string, any>[]): string =>
+      (createService() as any).formatDeterministicResponse(intent, rows);
+
+    it('proveedor: el texto afirma el valor estructurado (no "no tengo")', () => {
+      const answer = fmt('list_supplier_names', [{ proveedor: 'MORTEROS TX S.A.' }]);
+      expect(answer).toContain('MORTEROS TX S.A.');
+      expect(answer).toContain('El proveedor es');
+      expect(answer.toLowerCase()).not.toContain('no tengo');
+      expect(answer.toLowerCase()).not.toContain('no encontré');
+    });
+
+    it('proveedor sin filas: respuesta consistente, sin afirmar un dato falso', () => {
+      const answer = fmt('list_supplier_names', []);
+      expect(answer.toLowerCase()).toContain('no encontré el nombre del proveedor');
+    });
+
+    it('cliente: afirma el valor estructurado', () => {
+      const answer = fmt('list_customer_names', [{ cliente: 'RABAZ SPA' }]);
+      expect(answer).toBe('El cliente es RABAZ SPA.');
+    });
+
+    it('conteo: deriva el número directamente de la fila', () => {
+      expect(fmt('count_documents', [{ total_documentos: 10 }])).toBe(
+        'Tienes 10 documentos.',
+      );
+    });
+
+    it('números de orden de compra: explicita el scope (tipo Orden de Compra)', () => {
+      const answer = fmt('list_order_numbers', [
+        { filename: 'OC_Yolito2.pdf', numero_orden_compra: '052_00514607-1' },
+      ]);
+      expect(answer).toContain('Orden de Compra');
+      expect(answer).toContain('052_00514607-1');
+    });
+
+    it('tipos: deduplica y lista sin contradecir', () => {
+      const answer = fmt('list_document_types', [
+        { tipo_documento: 'Orden de Compra' },
+        { tipo_documento: 'Orden de Despacho' },
+      ]);
+      expect(answer).toContain('Orden de Compra');
+      expect(answer).toContain('Orden de Despacho');
+    });
+  });
+
   it('T28-013: órdenes de compra de Sodimac → ruta OC anclada a la entidad depurada', () => {
     const sql = buildSql([], '¿Qué órdenes de compra tengo de Sodimac?');
 

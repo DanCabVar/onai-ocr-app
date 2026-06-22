@@ -301,3 +301,70 @@ por entidad y ambigüedad) sin sobreajustar al dataset.
   estructura `{name,value,label}` (documentado en el schema). Validar en QA.
 - La re-validación funcional definitiva es en QA con datos reales (este trabajo
   es determinístico y probado en unit, no ejecuta SQL real).
+
+## Iteración 3 — consistencia de síntesis y regla de OC (2026-06-22)
+
+QA de la iteración 2 confirmó 6 PASS (`T28-001/002/003/004/007/008`) y dejó 2
+brechas. Esta iteración las cierra.
+
+### Brecha 1 — el texto final contradecía el resultado estructurado
+
+Síntoma: para "¿y cuál es el proveedor?", la tabla SQL traía `MORTEROS TX S.A.`
+pero el texto decía "No tengo el nombre del proveedor en la información anterior".
+
+Causa: en la ruta determinística, `formatResponse` tenía un *fast-path* que
+mandaba el valor al LLM junto con **toda la cadena contextual** (historial +
+meta-instrucciones "sin inventar datos"). El LLM razonaba sobre la conversación
+—donde el proveedor no se había mencionado— y negaba el dato, ignorando el
+resultado.
+
+Fix: para resultados **determinísticos** se introduce
+`formatDeterministicResponse(intent, rows)` que arma el texto **localmente, sin
+LLM**, derivándolo directamente de las filas. Así el texto nunca contradice la
+data. Plantillas por intención (ej. "El proveedor es MORTEROS TX S.A.", "Tienes
+10 documentos."). La ruta **generativa** sigue usando LLM, pero ahora recibe solo
+la **pregunta actual**, no el contexto completo. Regla documentada en
+`field_semantics_v1.md` ("Regla de síntesis de respuesta").
+
+### Brecha 2 — semántica de `list_order_numbers` no explícita
+
+Se formaliza en `field_semantics_v1.md` y en el benchmark (`T28-005`):
+"números de orden de compra" = campo `numero_orden_compra` **solo de documentos
+cuyo tipo (real o inferido) es `Orden de Compra`**. No incluye referencias a OC
+dentro de otros tipos (p. ej. `Orden de Despacho`); eso sería una intención
+distinta futura (`list_referenced_order_numbers`). El comportamiento actual ya
+cumple la regla; la respuesta antepone el scope ("Según tus documentos de tipo
+Orden de Compra: …") para que sea transparente.
+
+### Regresiones añadidas
+
+- Síntesis determinística: el texto de proveedor/cliente **afirma** el valor y
+  nunca contiene "no tengo"/"no encontré" cuando hay dato; respuesta vacía
+  consistente cuando no hay filas.
+- `list_order_numbers`: el texto explicita el scope `Orden de Compra`.
+- Scoping por filename (`T28-009`) marcado como **regresión obligatoria** en el
+  benchmark.
+
+### Estado del benchmark tras iteración 3
+
+- **PASS** (validado en QA iter 2): `T28-001/002/003/004/007/008`. `T28-005`
+  pasa a `pass` (regla formalizada, coincide con `expected`). `T28-009` `pass`
+  (scoping confirmado).
+- **fixing** (re-validar en QA iter 3): `T28-006` (consistencia de texto),
+  `T28-010` (scoping fecha), `T28-014` (ambigüedad), `T28-015` (multi-turno).
+- **draft**: `T28-011/012/013`.
+
+### Tests ejecutados (iteración 3)
+
+- `cd backend && pnpm test` → **7 suites / 53 tests en verde**.
+- `cd backend && pnpm run build` → OK.
+
+### Riesgos pendientes
+
+- La síntesis determinística es intencionalmente sobria (exactitud > estética).
+  Si se quiere texto más rico, debe seguir siendo derivado de las filas, nunca
+  re-sintetizado por LLM en la ruta determinística.
+- La regla de `list_order_numbers` excluye referencias desde despachos por
+  diseño; si el negocio pide lo contrario, crear intención separada (no ampliar
+  implícitamente).
+- Confirmación funcional final de `T28-006/010/014/015` es en QA con datos reales.
