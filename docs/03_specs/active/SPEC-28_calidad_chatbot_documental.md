@@ -84,6 +84,48 @@ Excluye:
 - benchmark manual/semiautomático en QA con casos versionados
 - evidencia en `docs/04_trabajo/T28_calidad_chatbot_documental/README.md`
 
+## Plan inicial por fases
+
+### Fase 1 — Base semántica y benchmark
+
+- definir catálogo de intenciones de primer nivel:
+  - `count_documents`
+  - `list_document_types`
+  - `list_issue_dates`
+  - `list_order_numbers`
+  - `list_supplier_names`
+  - `list_customer_names`
+  - `list_totals`
+- construir matriz `intención -> campos candidatos -> campos excluidos`;
+- levantar benchmark QA mínimo con:
+  - preguntas simples;
+  - follow-ups;
+  - preguntas ambiguas;
+  - documentos de al menos 3 tipos distintos.
+
+### Fase 2 — Resolución de campos
+
+- implementar capa de resolución semántica de campos y labels;
+- priorizar `nombre_*` frente a `rut_*`, `telefono_*`, `correo_*`, `direccion_*`;
+- normalizar deduplicación, vacíos y variantes de formato;
+- reducir dependencia de heurísticas acopladas al dataset actual.
+
+### Fase 3 — Orquestación del chat
+
+- definir cuándo usar:
+  - ruta determinística;
+  - SQL-RAG generativo;
+  - híbrido/fallback;
+- agregar trazabilidad suficiente para depurar decisiones sin exponer internals peligrosos al usuario final;
+- medir latencia por estrategia.
+
+### Fase 4 — Regresiones y cierre
+
+- fijar regresiones automatizadas por intención crítica;
+- correr benchmark QA completo;
+- documentar precisión percibida y límites conocidos;
+- decidir si parte del trabajo vuelve a `T20` o queda 100% absorbido por `T28`.
+
 ## Riesgos
 
 - sobreajustar reglas a un subconjunto pequeño de documentos;
