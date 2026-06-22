@@ -160,8 +160,19 @@ export class SqlRagService {
       // 7. Execute query with timeout
       const rows = await this.executeSql(safeSql, params);
 
-      // 8. Format response — skip LLM for small result sets
-      const answer = await this.formatResponse(question, generatedSql, rows);
+      // 8. Format response.
+      //    - Ruta determinística: formateo LOCAL por intención (sin LLM), para
+      //      que el texto nunca contradiga el resultado estructurado (T28).
+      //    - Ruta generativa: se formatea con LLM usando solo la pregunta
+      //      actual (no el contexto completo) para evitar confusiones.
+      const answer =
+        strategy === 'deterministic'
+          ? this.formatDeterministicResponse(resolved.intent, rows)
+          : await this.formatResponse(
+              resolved.currentQuestion,
+              generatedSql,
+              rows,
+            );
 
       this.logger.log(
         `SQL RAG route user=${userId} intent=${resolved.intent} strategy=${strategy} rows=${rows.length}`,
@@ -737,6 +748,90 @@ Solo la query SQL, sin backticks ni explicaciones. Si no puedes, responde: NO_SQ
       );
     } finally {
       await queryRunner.release();
+    }
+  }
+
+  /**
+   * Formatea la respuesta de la ruta determinística SIN llamar al LLM.
+   *
+   * Garantiza consistencia: el texto se deriva directamente de las filas, por lo
+   * que nunca contradice el resultado estructurado (corrige el caso "la tabla
+   * trae el proveedor pero el texto dice que no lo tiene").
+   */
+  private formatDeterministicResponse(
+    intent: ChatIntent,
+    rows: Record<string, any>[],
+  ): string {
+    if (!rows || rows.length === 0) {
+      return this.emptyDeterministicAnswer(intent);
+    }
+
+    if (intent === 'count_documents') {
+      const value = Object.values(rows[0])[0];
+      const n = Number(value);
+      const label = !isNaN(n) ? n.toLocaleString('es-CL') : String(value);
+      return `Tienes ${label} documento${n === 1 ? '' : 's'}.`;
+    }
+
+    // Intenciones de nombre/tipo: lead-in claro + valores deduplicados.
+    const leadIns: Partial<Record<ChatIntent, { one: string; many: string }>> = {
+      list_supplier_names: {
+        one: 'El proveedor es',
+        many: 'Los proveedores son',
+      },
+      list_customer_names: { one: 'El cliente es', many: 'Los clientes son' },
+      list_document_types: {
+        one: 'El tipo de documento es',
+        many: 'Los tipos de documento son',
+      },
+    };
+    const lead = leadIns[intent];
+    if (lead) {
+      const key = Object.keys(rows[0])[0];
+      const values = Array.from(
+        new Set(
+          rows
+            .map((r) => String(r[key] ?? '').trim())
+            .filter((v) => v.length > 0),
+        ),
+      );
+      if (values.length === 0) {
+        return this.emptyDeterministicAnswer(intent);
+      }
+      if (values.length === 1) {
+        return `${lead.one} ${values[0]}.`;
+      }
+      return `${lead.many}:\n${values.map((v) => `• ${v}`).join('\n')}`;
+    }
+
+    // Números de orden de compra: se explicita el scope (regla documentada).
+    if (intent === 'list_order_numbers') {
+      return `Según tus documentos de tipo Orden de Compra:\n${this.formatRowsLocally(rows)}`;
+    }
+
+    // Resto (fechas, totales): tabla local legible, sin LLM.
+    return this.formatRowsLocally(rows);
+  }
+
+  /** Respuesta vacía consistente por intención (no afirma datos inexistentes). */
+  private emptyDeterministicAnswer(intent: ChatIntent): string {
+    switch (intent) {
+      case 'list_supplier_names':
+        return 'No encontré el nombre del proveedor en los documentos que coinciden con tu consulta.';
+      case 'list_customer_names':
+        return 'No encontré el nombre del cliente en los documentos que coinciden con tu consulta.';
+      case 'list_order_numbers':
+        return 'No encontré números de orden de compra en tus documentos de tipo Orden de Compra para esa consulta.';
+      case 'list_issue_dates':
+        return 'No encontré fechas de emisión para los documentos que coinciden con tu consulta.';
+      case 'list_document_types':
+        return 'No encontré tipos de documento para tu consulta.';
+      case 'count_documents':
+        return 'No encontré documentos que coincidan con tu consulta.';
+      case 'list_totals':
+        return 'No encontré un total para los documentos que coinciden con tu consulta.';
+      default:
+        return 'No encontré resultados para tu consulta.';
     }
   }
 
