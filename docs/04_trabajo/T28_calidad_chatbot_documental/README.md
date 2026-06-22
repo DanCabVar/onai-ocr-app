@@ -235,3 +235,69 @@ salvo el adversarial `T28-014`. La validación funcional restante es en vivo
   ruta generativa (que puede matizar) y se evalúan en QA; no se fuerzan reglas
   rígidas, evitando el sobreajuste que advierte el propio spec. Si la data de un
   tenant lo amerita, se agrega un guard data-driven con su regresión.
+
+## Iteración 2 — corrección de FAIL de QA (2026-06-22)
+
+La 1.ª iteración se validó en QA con 5 PASS y 7 FAIL. Esta iteración ataca las
+4 causas raíz detectadas (entity resolution, scoping por documento, agregaciones
+por entidad y ambigüedad) sin sobreajustar al dataset.
+
+### Causas raíz y correcciones
+
+1. **Entity drift desde el historial.** `extractTrackedEntity` escaneaba toda la
+   cadena contextual (incluidos turnos del asistente) y el primer filename ganaba.
+   → `resolveEntity` ahora **prioriza la pregunta actual**; solo hereda del
+   contexto si la pregunta actual no aporta entidad, y exclusivamente de turnos
+   del **usuario** (`collectUserContext`), nunca de lo que citó el bot.
+   - Corrige: `T28-010` (fecha de OC_Yolito2 usaba OC_Yolito), `T28-004`
+     (conteo daba 1 porque heredaba un filename del bot).
+2. **`list_document_types` ignoraba el tipo inferido.** Hacía `INNER JOIN
+   document_types` y solo leía `dt.name`; los docs tipo "Otros" (tipo real en
+   `inferred_data.inferred_type`) quedaban fuera. → `LEFT JOIN` + `CASE` que toma
+   el tipo real o, si es "Otros"/placeholder, el `inferred_type`, filtrando
+   placeholders. Corrige `T28-002` (vacío) y `T28-007` (faltaba Orden de Despacho).
+3. **Resolución de campos solo sobre `extracted_data.fields`.** → todas las
+   consultas de campo ahora escanean también `inferred_data.key_fields`
+   (`combinedFieldsExpression`), robusteciendo docs inferidos. La rama OC además
+   acepta el tipo por `inferred_type`.
+4. **Scoping por filename no exclusivo.** Cuando la entidad es un archivo, el
+   scope se ancla **solo** a `filename` (sin OR sobre OCR/summary/campos), evitando
+   arrastrar otros documentos que lo mencionen. Refuerza `T28-008/009/010`.
+5. **Ambigüedad (`T28-014`).** Entidades capturadas por el patrón débil "de X" en
+   una pregunta por NOMBRE (proveedor/cliente) se marcan ambiguas
+   (`isAmbiguousEntity`) y el chat **pide aclaración** en vez de afirmar. Las
+   anclas fuertes (filename, rol, contexto) no se ven afectadas, por lo que
+   `T28-006/009` siguen respondiendo directo.
+
+### Entity resolution / scoping / ambiguity — resumen
+
+- **Entity resolution**: pregunta actual > contexto de usuario > nada; fuente de
+  la entidad etiquetada (`filename|role|scope|loose|context`) para calibrar
+  confianza.
+- **Scoping**: filename ⇒ match exclusivo por `filename`; entidad ⇒ match amplio
+  (filename/OCR/summary/campos extraídos e inferidos).
+- **Ambiguity**: `loose` + intención de nombre ⇒ aclaración; nunca inventa
+  equivalencia fuerte.
+
+### Tests ejecutados (iteración 2)
+
+- `cd backend && pnpm test` → **7 suites / 47 tests en verde**.
+- `cd backend && pnpm run build` → OK.
+- Regresiones nuevas: entity-drift (archivo del bot no contamina), conteo por
+  entidad current-first, tipos con `inferred_type` (`LEFT JOIN`), scoping
+  exclusivo por filename, `isAmbiguousEntity` para "proveedor de Grupo TX".
+
+### Casos esperados a mejorar (re-validar en QA)
+
+`T28-002`, `T28-004`, `T28-005`, `T28-007`, `T28-010`, `T28-014`, `T28-015`
+(marcados `fixing` en `benchmark_v1.csv`). Los 5 PASS previos
+(`T28-001/003/006/008/009`) se preservan por construcción y por regresión.
+
+### Riesgos pendientes
+
+- La corrección de tipos asume que el catch-all del sistema se llama "Otros";
+  si un tenant nombra distinto su tipo genérico, hay que parametrizarlo.
+- `combinedFieldsExpression` asume que `inferred_data.key_fields` comparte
+  estructura `{name,value,label}` (documentado en el schema). Validar en QA.
+- La re-validación funcional definitiva es en QA con datos reales (este trabajo
+  es determinístico y probado en unit, no ejecuta SQL real).

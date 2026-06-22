@@ -111,8 +111,11 @@ describe('T28 benchmark regressions (deterministic chat path)', () => {
     expect(sql).not.toBeNull();
     expect(sql).toContain('d.user_id = $1');
     expect(sql).toContain('AS numero_orden_compra');
-    // Restringido al tipo documental correcto
-    expect(sql).toContain("lower(dt.name) LIKE '%orden de compra%'");
+    // Restringido al tipo documental correcto (real o inferido)
+    expect(sql).toContain("lower(coalesce(dt.name, '')) LIKE '%orden de compra%'");
+    expect(sql).toContain(
+      "lower(coalesce(d.inferred_data->>'inferred_type', '')) LIKE '%orden de compra%'",
+    );
     // No mezcla el correlativo interno numero_oc_mts (forbidden 054_00655119)
     expect(sql).toContain("NOT LIKE '%oc_mts%'");
     // Sin valores vacíos ni placeholders sintéticos
@@ -150,7 +153,9 @@ describe('T28 benchmark regressions (deterministic chat path)', () => {
     expect(sql).not.toBeNull();
     expect(sql).toContain('d.user_id = $1');
     expect(sql).toContain('SELECT DISTINCT');
-    expect(sql).toContain('dt.name AS tipo_documento');
+    expect(sql).toContain('AS tipo_documento');
+    // Considera tipo real e inferido (docs "Otros")
+    expect(sql).toContain("d.inferred_data->>'inferred_type'");
     expect(sql).toContain("lower(d.filename) LIKE '%yolito%'");
   });
 
@@ -160,9 +165,11 @@ describe('T28 benchmark regressions (deterministic chat path)', () => {
     expect(sql).not.toBeNull();
     expect(sql).toContain('d.user_id = $1');
     expect(sql).toContain('AS cliente');
-    // Anclaje exacto al archivo (no arrastra OC_Yolito2.pdf)
+    // Anclaje EXCLUSIVO al archivo: solo filename, sin OCR/summary/campos
     expect(sql).toContain("lower(d.filename) LIKE '%oc_yolito.pdf%'");
     expect(sql).not.toContain("LIKE '%oc_yolito2.pdf%'");
+    expect(sql).not.toContain('ocr_raw_text');
+    expect(sql).not.toContain('EXISTS');
     // No confunde cliente con rut/correo/teléfono
     expect(sql).toContain("lower(cliente->>'name') LIKE '%cliente%'");
     expect(sql).toContain("NOT LIKE '%rut%'");
@@ -186,7 +193,10 @@ describe('T28 benchmark regressions (deterministic chat path)', () => {
     expect(sql).not.toBeNull();
     expect(sql).toContain('d.user_id = $1');
     expect(sql).toContain('AS fecha_emision');
+    // Scope EXCLUSIVO al archivo pedido (no arrastra OC_Yolito.pdf)
     expect(sql).toContain("lower(d.filename) LIKE '%oc_yolito2.pdf%'");
+    expect(sql).not.toContain("LIKE '%oc_yolito.pdf%'");
+    expect(sql).not.toContain('ocr_raw_text');
   });
 
   it('T28-011: total de la OC → campo total, nunca el neto', () => {
@@ -219,7 +229,10 @@ describe('T28 benchmark regressions (deterministic chat path)', () => {
     expect(sql).not.toBeNull();
     expect(sql).toContain('d.user_id = $1');
     expect(sql).toContain('SELECT DISTINCT');
-    expect(sql).toContain('dt.name AS tipo_documento');
+    expect(sql).toContain('AS tipo_documento');
+    // LEFT JOIN + tipo inferido para no perder docs "Otros"
+    expect(sql).toContain('LEFT JOIN my_document_types');
+    expect(sql).toContain("d.inferred_data->>'inferred_type'");
     expect(sql).not.toContain("LIKE '%tengo%'");
   });
 
@@ -241,7 +254,7 @@ describe('T28 benchmark regressions (deterministic chat path)', () => {
     expect(sql).not.toBeNull();
     expect(sql).toContain('d.user_id = $1');
     expect(sql).toContain('AS numero_orden_compra');
-    expect(sql).toContain("lower(dt.name) LIKE '%orden de compra%'");
+    expect(sql).toContain("lower(coalesce(dt.name, '')) LIKE '%orden de compra%'");
     // La entidad ruidosa ("compra tengo de Sodimac") se depura a "sodimac"
     expect(sql).toContain("lower(d.filename) LIKE '%sodimac%'");
     expect(sql).not.toContain("LIKE '%tengo%'");
