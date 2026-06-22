@@ -78,6 +78,75 @@ describe('QueryIntentService', () => {
     });
   });
 
+  describe('resolveEntity — prioridad pregunta actual sobre historial', () => {
+    const withContext = (history: string[], current: string): string =>
+      [
+        'Contexto reciente de la conversación:',
+        history.join('\n'),
+        `Pregunta actual del usuario: ${current}`,
+        'Resuelve la pregunta actual usando el contexto anterior cuando haga falta.',
+      ].join('\n\n');
+
+    it('usa el archivo de la pregunta actual, no el citado por el asistente', () => {
+      const ctx = withContext(
+        [
+          'Usuario: dame la fecha de OC_Yolito.pdf',
+          'Asistente: La fecha de OC_Yolito.pdf es 2025-09-22.',
+        ],
+        '¿qué fecha de emisión tiene OC_Yolito2.pdf?',
+      );
+      const r = service.resolve(ctx);
+      expect(r.entity).toBe('OC_Yolito2.pdf');
+      expect(r.entityIsFilename).toBe(true);
+    });
+
+    it('no hereda un filename del asistente para un conteo por entidad', () => {
+      const ctx = withContext(
+        [
+          'Usuario: dame las fechas de los documentos de Yolito',
+          'Asistente: Las fechas de OC_Yolito.pdf y OC_Yolito2.pdf son 2025-09-22.',
+        ],
+        '¿y cuántos documentos de Yolito tengo?',
+      );
+      const r = service.resolve(ctx);
+      expect(r.entity).toBe('yolito');
+      expect(r.entityIsFilename).toBe(false);
+    });
+
+    it('hereda la entidad de un turno previo del usuario en un follow-up', () => {
+      const ctx = withContext(
+        ['Usuario: el nombre del comprador es Yolito Balart Hnos. Ltda.'],
+        '¿y cuál es el proveedor?',
+      );
+      const r = service.resolve(ctx);
+      expect(r.entity).toBe('yolito balart hnos');
+      expect(r.entitySource).toBe('context');
+    });
+  });
+
+  describe('isAmbiguousEntity — entidad débil en pregunta por nombre (T28-014)', () => {
+    it('marca ambigüedad para "proveedor de Grupo TX" (ancla débil "de X")', () => {
+      expect(
+        service.isAmbiguousEntity(service.resolve('¿cuál es el proveedor de Grupo TX?')),
+      ).toBe(true);
+    });
+
+    it('no marca ambigüedad cuando el ancla es un archivo o el contexto', () => {
+      expect(
+        service.isAmbiguousEntity(
+          service.resolve('¿quién es el proveedor en OC_Yolito2.pdf?'),
+        ),
+      ).toBe(false);
+
+      const ctx = [
+        'Contexto reciente de la conversación:',
+        'Usuario: el nombre del comprador es Yolito Balart Hnos. Ltda.',
+        'Pregunta actual del usuario: ¿y cuál es el proveedor?',
+      ].join('\n\n');
+      expect(service.isAmbiguousEntity(service.resolve(ctx))).toBe(false);
+    });
+  });
+
   describe('isClarificationStatement — statements de aclaración (T28-015)', () => {
     it('detecta el statement que aporta la entidad', () => {
       expect(

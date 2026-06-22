@@ -114,6 +114,19 @@ export class SqlRagService {
         };
       }
 
+      // 2c. Ambiguous entity for a name question ("¿el proveedor de Grupo TX?"):
+      //     no afirmar una equivalencia fuerte; pedir aclaración (T28-014).
+      if (this.queryIntent.isAmbiguousEntity(resolved)) {
+        this.logger.log(
+          `SQL RAG route user=${userId} intent=${resolved.intent} strategy=ambiguity`,
+        );
+        return {
+          answer: this.buildAmbiguityClarification(resolved.entity),
+          strategy: 'general',
+          intent: resolved.intent,
+        };
+      }
+
       // 3. Prefer deterministic SQL for common field/entity follow-ups
       const deterministicSql = this.buildDeterministicFieldQuery(question);
 
@@ -408,6 +421,21 @@ IMPORTANTE: user_id siempre se pasa como parámetro $1. Usa $1 en WHERE, nunca e
     );
   }
 
+  /**
+   * Respuesta cautelosa ante una entidad ambigua en una pregunta por nombre
+   * (proveedor/cliente). Evita inventar una equivalencia fuerte y pide
+   * desambiguar por documento o rol (T28-014).
+   */
+  private buildAmbiguityClarification(entity: string | null): string {
+    const ref = entity ? `«${entity}»` : 'esa entidad';
+    return (
+      `Para no asumir un dato incorrecto: ${ref} podría ser el comprador, el ` +
+      'cliente o un dato de contacto (correo/dominio), no necesariamente el ' +
+      'proveedor. ¿Puedes indicarme el documento específico (por ejemplo su ' +
+      'nombre de archivo) o aclarar el rol, para darte el dato exacto?'
+    );
+  }
+
   private buildIssueDatesSql(entityConditions: string | null): string {
     const fechaClause = this.fieldResolution.buildFieldMatchClause(
       'fecha',
@@ -418,7 +446,7 @@ SELECT DISTINCT
   d.filename AS filename,
   fecha->>'value' AS fecha_emision
 FROM my_documents d
-CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') fecha
+CROSS JOIN LATERAL jsonb_array_elements(${this.fieldResolution.combinedFieldsExpression()}) fecha
 WHERE d.user_id = $1${this.entityFilter(entityConditions)}
   AND ${fechaClause}
 ORDER BY d.filename, fecha_emision`;
@@ -442,10 +470,13 @@ SELECT DISTINCT
   d.filename AS filename,
   orden->>'value' AS numero_orden_compra
 FROM my_documents d
-JOIN my_document_types dt ON d.document_type_id = dt.id
-CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') orden
+LEFT JOIN my_document_types dt ON d.document_type_id = dt.id
+CROSS JOIN LATERAL jsonb_array_elements(${this.fieldResolution.combinedFieldsExpression()}) orden
 WHERE d.user_id = $1${this.entityFilter(entityConditions)}
-  AND lower(dt.name) LIKE '%orden de compra%'
+  AND (
+    lower(coalesce(dt.name, '')) LIKE '%orden de compra%'
+    OR lower(coalesce(d.inferred_data->>'inferred_type', '')) LIKE '%orden de compra%'
+  )
   AND ${ordenClause}
   AND ${nonEmpty}
 ORDER BY d.filename, numero_orden_compra`;
@@ -461,7 +492,7 @@ ORDER BY d.filename, numero_orden_compra`;
 SELECT DISTINCT
   proveedor->>'value' AS proveedor
 FROM my_documents d
-CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') proveedor
+CROSS JOIN LATERAL jsonb_array_elements(${this.fieldResolution.combinedFieldsExpression()}) proveedor
 WHERE d.user_id = $1${this.entityFilter(entityConditions)}
   AND ${proveedorClause}
   AND ${nonEmpty}
@@ -478,7 +509,7 @@ ORDER BY proveedor`;
 SELECT DISTINCT
   cliente->>'value' AS cliente
 FROM my_documents d
-CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') cliente
+CROSS JOIN LATERAL jsonb_array_elements(${this.fieldResolution.combinedFieldsExpression()}) cliente
 WHERE d.user_id = $1${this.entityFilter(entityConditions)}
   AND ${clienteClause}
   AND ${nonEmpty}
@@ -496,7 +527,7 @@ SELECT DISTINCT
   d.filename AS filename,
   tot->>'value' AS total
 FROM my_documents d
-CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') tot
+CROSS JOIN LATERAL jsonb_array_elements(${this.fieldResolution.combinedFieldsExpression()}) tot
 WHERE d.user_id = $1${this.entityFilter(entityConditions)}
   AND ${totalClause}
   AND ${nonEmpty}
@@ -504,12 +535,25 @@ ORDER BY d.filename, total`;
   }
 
   private buildDocumentTypesSql(entityConditions: string | null): string {
+    // Considera el tipo real (`document_types.name`) y, para documentos tipo
+    // "Otros", el tipo inferido (`inferred_data.inferred_type`). LEFT JOIN para
+    // no descartar documentos sin tipo formal; placeholders se filtran fuera.
     return `
-SELECT DISTINCT
-  dt.name AS tipo_documento
-FROM my_documents d
-JOIN my_document_types dt ON d.document_type_id = dt.id
-WHERE d.user_id = $1${this.entityFilter(entityConditions)}
+SELECT DISTINCT tipo_documento
+FROM (
+  SELECT
+    CASE
+      WHEN dt.name IS NOT NULL
+       AND lower(trim(dt.name)) NOT IN ('otros', 'sin tipo', 'sin clasificar')
+        THEN trim(dt.name)
+      ELSE NULLIF(trim(d.inferred_data->>'inferred_type'), '')
+    END AS tipo_documento
+  FROM my_documents d
+  LEFT JOIN my_document_types dt ON d.document_type_id = dt.id
+  WHERE d.user_id = $1${this.entityFilter(entityConditions)}
+) tipos
+WHERE tipo_documento IS NOT NULL
+  AND lower(tipo_documento) NOT IN ('otros', 'sin tipo', 'sin clasificar', 'sin valor')
 ORDER BY tipo_documento`;
   }
 

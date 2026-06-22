@@ -19,11 +19,23 @@ export type ChatIntent =
   | 'list_totals'
   | 'unknown';
 
+/**
+ * Origen de la entidad rastreada. Permite calibrar confianza:
+ * - `filename`/`role`/`scope`: ancla fuerte y explícita.
+ * - `loose`: capturada por el patrón de respaldo "de <…>" (señal débil).
+ * - `context`: heredada de un turno previo del usuario (follow-up).
+ */
+export type EntitySource = 'filename' | 'role' | 'scope' | 'loose' | 'context';
+
 export interface ResolvedQueryIntent {
   /** Intención semántica de la pregunta actual. */
   intent: ChatIntent;
   /** Entidad rastreada (proveedor/comprador/empresa) o null si no se detecta. */
   entity: string | null;
+  /** Origen de la entidad, para calibrar confianza/ambigüedad. */
+  entitySource: EntitySource | null;
+  /** Indica si la entidad es un nombre de archivo (scope por documento exacto). */
+  entityIsFilename: boolean;
   /** Texto de la pregunta actual, ya separado del contexto conversacional. */
   currentQuestion: string;
 }
@@ -72,9 +84,30 @@ export class QueryIntentService {
    */
   resolve(question: string): ResolvedQueryIntent {
     const currentQuestion = this.extractCurrentQuestion(question);
-    const entity = this.extractTrackedEntity(question);
+    const resolvedEntity = this.resolveEntity(question, currentQuestion);
     const intent = this.classifyIntent(currentQuestion);
-    return { intent, entity, currentQuestion };
+    return {
+      intent,
+      entity: resolvedEntity.entity,
+      entitySource: resolvedEntity.source,
+      entityIsFilename: resolvedEntity.source === 'filename',
+      currentQuestion,
+    };
+  }
+
+  /**
+   * Una consulta es ambigua cuando pide el NOMBRE de una entidad
+   * (proveedor/cliente) pero el ancla es solo el patrón débil "de <X>" de la
+   * pregunta actual: "¿cuál es el proveedor de Grupo TX?" no permite afirmar sin
+   * asumir una equivalencia fuerte (X podría ser comprador, dominio o correo).
+   * Las anclas fuertes (filename, rol explícito, contexto) no son ambiguas.
+   */
+  isAmbiguousEntity(resolved: ResolvedQueryIntent): boolean {
+    return (
+      (resolved.intent === 'list_supplier_names' ||
+        resolved.intent === 'list_customer_names') &&
+      resolved.entitySource === 'loose'
+    );
   }
 
   /**
@@ -160,42 +193,90 @@ export class QueryIntentService {
   }
 
   /**
-   * Extrae la entidad relevante (empresa/proveedor/comprador) desde la
-   * pregunta o el contexto reciente, evitando frases genéricas que no
-   * identifican una entidad real.
+   * Extrae la entidad rastreada (compat). Prefiere la pregunta actual y, si no
+   * hay entidad, hereda del contexto de turnos previos del usuario.
    */
   extractTrackedEntity(question: string): string | null {
-    // 1. Nombre de archivo: ancla precisa a un documento puntual
-    //    ("¿quién es el cliente en OC_Yolito.pdf?"). Se devuelve literal para
-    //    permitir un match exacto sobre `filename`.
-    const fileMatch = question.match(this.filenamePattern);
-    if (fileMatch?.[1]) {
-      return fileMatch[1].trim();
+    return this.resolveEntity(question, this.extractCurrentQuestion(question))
+      .entity;
+  }
+
+  /**
+   * Resuelve la entidad priorizando la PREGUNTA ACTUAL sobre el historial.
+   *
+   * Crítico para el scoping: si un turno previo (sobre todo del asistente)
+   * mencionó otro archivo/entidad, no debe contaminar la pregunta actual. Solo
+   * cuando la pregunta actual no aporta entidad se hereda del contexto, y
+   * exclusivamente de turnos del USUARIO (nunca de lo que respondió el bot).
+   */
+  private resolveEntity(
+    fullQuestion: string,
+    currentQuestion: string,
+  ): { entity: string | null; source: EntitySource | null } {
+    const fromCurrent = this.extractEntityFrom(currentQuestion);
+    if (fromCurrent) {
+      return fromCurrent;
     }
 
-    // 2. Patrones por rol o frase contextual.
-    const patterns = [
-      /nombre del (?:comprador|proveedor|emisor|cliente)[^.\n]* es ([^\n.]+)/i,
-      /documentos de ([^\n?.]+)/i,
-      /de ([A-Za-zÁÉÍÓÚáéíóúÑñ0-9 .&_-]{3,})/i,
+    const userContext = this.collectUserContext(fullQuestion);
+    if (userContext) {
+      const fromContext = this.extractEntityFrom(userContext);
+      if (fromContext) {
+        return { entity: fromContext.entity, source: 'context' };
+      }
+    }
+
+    return { entity: null, source: null };
+  }
+
+  /**
+   * Extrae una entidad desde un texto acotado, en orden de fuerza del ancla:
+   * nombre de archivo → rol explícito → "documentos de X" → "de X" (débil).
+   */
+  private extractEntityFrom(
+    text: string,
+  ): { entity: string; source: EntitySource } | null {
+    const fileMatch = text.match(this.filenamePattern);
+    if (fileMatch?.[1]) {
+      return { entity: fileMatch[1].trim(), source: 'filename' };
+    }
+
+    const candidates: Array<{ pattern: RegExp; source: EntitySource }> = [
+      {
+        pattern:
+          /nombre del (?:comprador|proveedor|emisor|cliente)[^.\n]* es ([^\n.]+)/i,
+        source: 'role',
+      },
+      { pattern: /documentos de ([^\n?.]+)/i, source: 'scope' },
+      { pattern: /de ([A-Za-zÁÉÍÓÚáéíóúÑñ0-9 .&_-]{3,})/i, source: 'loose' },
     ];
 
-    for (const pattern of patterns) {
-      const match = question.match(pattern);
+    for (const { pattern, source } of candidates) {
+      const match = text.match(pattern);
       const value = match?.[1]?.trim();
       if (!value || this.isGenericEntityPhrase(value)) {
         continue;
       }
-      // Limpia tokens genéricos/funcionales (artículos, verbos, roles) para
-      // quedarse con la entidad distintiva ("la orden de compra de Yolito2"
-      // → "yolito2"), reduciendo ruido en el anclaje sin sobreajustar.
       const cleaned = this.cleanEntity(value);
       if (cleaned && !this.isGenericEntityPhrase(cleaned)) {
-        return cleaned;
+        return { entity: cleaned, source };
       }
     }
 
     return null;
+  }
+
+  /**
+   * Reúne solo los turnos del USUARIO del contexto reciente, descartando lo que
+   * respondió el asistente (evita heredar archivos/entidades que el bot citó).
+   */
+  private collectUserContext(question: string): string {
+    return question
+      .split('\n')
+      .filter((line) => /^\s*Usuario:/i.test(line))
+      .map((line) => line.replace(/^\s*Usuario:\s*/i, '').trim())
+      .filter(Boolean)
+      .join('\n');
   }
 
   /**

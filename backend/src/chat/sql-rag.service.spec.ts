@@ -196,7 +196,9 @@ Usuario: el nombre del comprador es Yolito Balart Hnos. Ltda.
 Pregunta actual del usuario: ¿y cuáles son sus números de orden de compra?
 `);
 
-    expect(contextualSql).toContain("lower(dt.name) LIKE '%orden de compra%'");
+    expect(contextualSql).toContain(
+      "lower(coalesce(dt.name, '')) LIKE '%orden de compra%'",
+    );
     expect(contextualSql).toContain("NOT IN ('sin valor', '—', '-')");
     expect(contextualSql).toContain('AS numero_orden_compra');
   });

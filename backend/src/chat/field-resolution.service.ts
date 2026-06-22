@@ -202,10 +202,35 @@ export class FieldResolutionService {
   }
 
   /**
+   * Expresión JSONB que une los campos extraídos (`extracted_data.fields`) con
+   * los campos inferidos (`inferred_data.key_fields`, docs tipo "Otros"), que
+   * comparten estructura `{name,value,type,label}`. Permite resolver campos sin
+   * importar si el documento fue tipificado o inferido.
+   */
+  combinedFieldsExpression(): string {
+    return (
+      "coalesce(d.extracted_data->'fields', '[]'::jsonb) " +
+      "|| coalesce(d.inferred_data->'key_fields', '[]'::jsonb)"
+    );
+  }
+
+  /** True si el término es un nombre de archivo (scope por documento exacto). */
+  isFilenameTerm(term: string): boolean {
+    return /\.(?:pdf|png|jpe?g|tiff?|docx?|xlsx?|csv)$/i.test(term.trim());
+  }
+
+  /**
    * Construye las condiciones SQL que localizan documentos asociados a la
-   * entidad rastreada, cubriendo filename, OCR, summaries y campos extraídos.
+   * entidad rastreada. Si la entidad es un nombre de archivo, el scope se ancla
+   * EXCLUSIVAMENTE al filename (no se mezcla con OCR/summary/campos) para no
+   * arrastrar otros documentos que solo lo mencionen.
    */
   buildEntityMatchConditions(entityTerms: string[]): string {
+    if (entityTerms.length === 1 && this.isFilenameTerm(entityTerms[0])) {
+      const termLike = this.escapeSqlLike(entityTerms[0]);
+      return `lower(d.filename) LIKE '%${termLike}%'`;
+    }
+
     const termClauses = entityTerms.flatMap((term) => {
       const termLike = this.escapeSqlLike(term);
       return [
