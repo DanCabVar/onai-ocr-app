@@ -112,4 +112,31 @@ describe('SqlRagService tenant isolation', () => {
       'FROM (SELECT * FROM documents WHERE user_id = $1) my_documents',
     );
   });
+
+  it('allows read-only CTE queries that start with WITH', () => {
+    const { service } = createService();
+
+    expect(() =>
+      (service as any).validateSql(
+        `WITH docs AS (
+          SELECT filename
+          FROM my_documents
+          WHERE user_id = $1
+        )
+        SELECT filename FROM docs`,
+      ),
+    ).not.toThrow();
+  });
+
+  it('normalizes unnamed result columns for frontend display', () => {
+    const { service } = createService();
+
+    const normalized = (service as any).normalizeRowKeys({
+      '?column?': '052_00514607-1',
+    });
+
+    expect(normalized).toEqual({
+      valor: '052_00514607-1',
+    });
+  });
 });

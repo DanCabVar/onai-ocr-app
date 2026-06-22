@@ -303,7 +303,7 @@ ${schemaContext}
 
 REGLAS:
 1. WHERE user_id = $1 SIEMPRE (nunca el valor directo)
-2. Solo SELECT. Sin INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/TRUNCATE.
+2. Solo lectura. Puedes usar SELECT o WITH ... SELECT. Sin INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/TRUNCATE.
 3. LIMIT máximo ${MAX_ROWS}
 4. Para campos JSONB usa jsonb_array_elements como se indica arriba
 5. JOIN my_document_types si necesitas el nombre del tipo
@@ -311,6 +311,8 @@ REGLAS:
 7. Una sola query, sin punto y coma
 8. Si el usuario usa nombres de roles o etiquetas naturales ("comprador", "emisor", "proveedor", "fecha de emisión"), NO dependas solo del name exacto del campo: usa coincidencias flexibles sobre f->>'name' y f->>'label' con ILIKE/LOWER LIKE
 9. Si el usuario menciona una empresa/persona, búscala con coincidencia parcial en f->>'value'
+10. TODA expresión calculada o campo extraído debe llevar alias explícito y legible (ej. AS fecha_emision, AS numero_orden_compra, AS proveedor)
+11. Si la pregunta está en plural ("cuáles", "cuántos documentos", "números"), devuelve todos los resultados relevantes; no uses LIMIT 1 salvo que el usuario pida un único resultado
 
 Pregunta: "${question}"
 
@@ -326,6 +328,7 @@ Solo la query SQL, sin backticks ni explicaciones. Si no puedes, responde: NO_SQ
     let sql = response
       .replace(/^```(?:sql)?\s*\n?/gm, '')
       .replace(/\n?```\s*$/gm, '')
+      .replace(/^\s*sql\s*:\s*/i, '')
       .trim();
 
     sql = sql.replace(/;\s*$/, '');
@@ -345,8 +348,10 @@ Solo la query SQL, sin backticks ni explicaciones. Si no puedes, responde: NO_SQ
       }
     }
 
-    if (!/^\s*SELECT\b/i.test(sql)) {
-      throw new ForbiddenException('Solo se permiten queries SELECT.');
+    if (!/^\s*(SELECT|WITH)\b/i.test(sql)) {
+      throw new ForbiddenException(
+        'Solo se permiten queries de solo lectura (SELECT o WITH ... SELECT).',
+      );
     }
 
     if (!sql.includes('$1')) {
@@ -449,8 +454,12 @@ Solo la query SQL, sin backticks ni explicaciones. Si no puedes, responde: NO_SQ
 
       await queryRunner.query('COMMIT');
 
-      this.logger.log(`Query executed: ${rows.length} rows returned`);
-      return Array.isArray(rows) ? rows.slice(0, MAX_ROWS) : [];
+      const normalizedRows = Array.isArray(rows)
+        ? rows.slice(0, MAX_ROWS).map((row) => this.normalizeRowKeys(row))
+        : [];
+
+      this.logger.log(`Query executed: ${normalizedRows.length} rows returned`);
+      return normalizedRows;
     } catch (error) {
       await queryRunner.query('ROLLBACK').catch(() => {});
       this.logger.error(`SQL execution error: ${error.message}`);
@@ -632,5 +641,23 @@ Formatea una respuesta clara y concisa EN ESPAÑOL:
         return `${i + 1}. ${parts.join('\n')}`;
       })
       .join('\n\n');
+  }
+
+  private normalizeRowKeys(row: Record<string, any>): Record<string, any> {
+    const normalized: Record<string, any> = {};
+    let unnamedIndex = 1;
+
+    for (const [rawKey, value] of Object.entries(row)) {
+      let key = rawKey;
+
+      if (!key || key === '?column?') {
+        key = unnamedIndex === 1 ? 'valor' : `valor_${unnamedIndex}`;
+        unnamedIndex += 1;
+      }
+
+      normalized[key] = value;
+    }
+
+    return normalized;
   }
 }
