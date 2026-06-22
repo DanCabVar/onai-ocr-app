@@ -1,5 +1,10 @@
 import { apiClient } from './client';
 
+export interface ChatHistoryMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface ChatQueryResponse {
   answer: string;
   query?: string;
@@ -7,13 +12,13 @@ export interface ChatQueryResponse {
 }
 
 export const chatService = {
-  /**
-   * Send a natural language question to the RAG SQL chat endpoint.
-   * POST /api/chat/query  { query: string }
-   */
-  async query(question: string): Promise<ChatQueryResponse> {
+  async query(
+    question: string,
+    history: ChatHistoryMessage[] = [],
+  ): Promise<ChatQueryResponse> {
     const response = await apiClient.post<ChatQueryResponse>('/chat/query', {
       query: question,
+      history,
     });
     return response.data;
   },

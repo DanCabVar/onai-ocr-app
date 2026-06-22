@@ -57,7 +57,12 @@ export default function ChatPage() {
     setIsProcessing(true)
 
     try {
-      const result = await chatService.query(question)
+      const history = messages
+        .filter((message) => message.id !== "welcome")
+        .slice(-4)
+        .map((message) => ({ role: message.role, content: message.content }))
+
+      const result = await chatService.query(question, history)
 
       const aiMessage: Message = {
         id: Math.random().toString(36).substring(7),
