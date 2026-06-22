@@ -84,32 +84,33 @@ export class SqlRagService {
       // 1. Build (or retrieve cached) schema context for this user
       const schemaContext = await this.getSchemaContext(userId);
 
-      // 2. Generate SQL via Gemini (uses $1 placeholder for user_id)
-      const generatedSql = await this.generateSql(
-        question,
-        schemaContext,
-        userId,
-      );
+      // 2. Prefer deterministic SQL for common field/entity follow-ups
+      const deterministicSql = this.buildDeterministicFieldQuery(question);
 
-      // 2b. If no SQL (general question), answer conversationally
+      // 3. Generate SQL via Gemini (uses $1 placeholder for user_id) when needed
+      const generatedSql =
+        deterministicSql ||
+        (await this.generateSql(question, schemaContext, userId));
+
+      // 3b. If no SQL (general question), answer conversationally
       if (!generatedSql) {
         const answer = await this.answerGeneral(question, schemaContext);
         return { answer };
       }
 
-      // 3. Validate the SQL
+      // 4. Validate the SQL
       this.validateSql(generatedSql);
 
-      // 4. Enforce user_id filter — replace placeholder and execute with param
+      // 5. Enforce user_id filter — replace placeholder and execute with param
       const { safeSql, params } = this.prepareSafeQuery(
         generatedSql,
         userId,
       );
 
-      // 5. Execute query with timeout
+      // 6. Execute query with timeout
       const rows = await this.executeSql(safeSql, params);
 
-      // 6. Format response — skip LLM for small result sets
+      // 7. Format response — skip LLM for small result sets
       const answer = await this.formatResponse(question, generatedSql, rows);
 
       return {
@@ -286,6 +287,142 @@ IMPORTANTE: user_id siempre se pasa como parámetro $1. Usa $1 en WHERE, nunca e
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase();
+  }
+
+  private buildDeterministicFieldQuery(question: string): string | null {
+    const normalized = this.normalizeText(question);
+    const currentQuestion = this.extractCurrentQuestion(question);
+    const normalizedCurrentQuestion = this.normalizeText(currentQuestion);
+    const entity = this.extractTrackedEntity(question);
+
+    if (!entity) {
+      return null;
+    }
+
+    const entityLike = this.escapeSqlLike(entity);
+    const entityConditions = this.buildEntityMatchConditions(entityLike);
+
+    if (normalizedCurrentQuestion.includes('fecha') && normalizedCurrentQuestion.includes('emision')) {
+      return `
+SELECT DISTINCT
+  d.filename AS filename,
+  fecha->>'value' AS fecha_emision
+FROM my_documents d
+CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') fecha
+WHERE d.user_id = $1
+  AND (${entityConditions})
+  AND (
+    lower(fecha->>'name') LIKE '%fecha_emision%'
+    OR lower(fecha->>'label') LIKE '%fecha de emision%'
+  )
+ORDER BY d.filename, fecha_emision`;
+    }
+
+    if (
+      normalizedCurrentQuestion.includes('cuanto') ||
+      normalizedCurrentQuestion.includes('cuantos')
+    ) {
+      return `
+SELECT COUNT(DISTINCT d.id) AS total_documentos_yolito
+FROM my_documents d
+WHERE d.user_id = $1
+  AND (${entityConditions})`;
+    }
+
+    if (
+      normalizedCurrentQuestion.includes('numero') &&
+      normalizedCurrentQuestion.includes('orden')
+    ) {
+      return `
+SELECT DISTINCT
+  d.filename AS filename,
+  orden->>'value' AS numero_orden_compra
+FROM my_documents d
+CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') orden
+WHERE d.user_id = $1
+  AND (${entityConditions})
+  AND (
+    lower(orden->>'name') LIKE '%numero_orden%'
+    OR lower(orden->>'name') LIKE '%numero_oc%'
+    OR lower(orden->>'label') LIKE '%numero de orden%'
+  )
+ORDER BY d.filename, numero_orden_compra`;
+    }
+
+    if (normalizedCurrentQuestion.includes('proveedor')) {
+      return `
+SELECT DISTINCT
+  d.filename AS filename,
+  proveedor->>'value' AS proveedor
+FROM my_documents d
+CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') proveedor
+WHERE d.user_id = $1
+  AND (${entityConditions})
+  AND (
+    lower(proveedor->>'name') LIKE '%proveedor%'
+    OR lower(proveedor->>'label') LIKE '%proveedor%'
+  )
+ORDER BY d.filename, proveedor`;
+    }
+
+    if (
+      normalizedCurrentQuestion.includes('tipo') &&
+      normalizedCurrentQuestion.includes('document')
+    ) {
+      return `
+SELECT DISTINCT
+  dt.name AS tipo_documento
+FROM my_documents d
+JOIN my_document_types dt ON d.document_type_id = dt.id
+WHERE d.user_id = $1
+  AND (${entityConditions})
+ORDER BY tipo_documento`;
+    }
+
+    return null;
+  }
+
+  private extractCurrentQuestion(question: string): string {
+    const match = question.match(/Pregunta actual del usuario:\s*([\s\S]*)$/i);
+    return match?.[1]?.trim() || question.trim();
+  }
+
+  private extractTrackedEntity(question: string): string | null {
+    const patterns = [
+      /nombre del (?:comprador|proveedor|emisor|cliente)[^.\n]* es ([^\n.]+)/i,
+      /documentos de ([^\n?.]+)/i,
+      /de ([A-Za-zÁÉÍÓÚáéíóúÑñ0-9 .&_-]{3,})/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = question.match(pattern);
+      const value = match?.[1]?.trim();
+      if (value) {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
+  private buildEntityMatchConditions(entityLike: string): string {
+    return `
+      lower(d.filename) LIKE '%${entityLike}%'
+      OR EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(d.extracted_data->'fields') f
+        WHERE lower(coalesce(f->>'value', '')) LIKE '%${entityLike}%'
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(coalesce(d.inferred_data->'key_fields', '[]'::jsonb)) f
+        WHERE lower(coalesce(f->>'value', '')) LIKE '%${entityLike}%'
+      )
+    `;
+  }
+
+  private escapeSqlLike(value: string): string {
+    return this.normalizeText(value).replace(/'/g, "''").trim();
   }
 
   /**
@@ -584,9 +721,10 @@ Formatea una respuesta clara y concisa EN ESPAÑOL:
 
     const formatValue = (k: string, v: any): string => {
       if (v === null || v === undefined) return '—';
+      const normalizedKey = this.normalizeText(k.replace(/_/g, ' '));
 
       // Format epoch milliseconds as readable dates
-      if (TIMESTAMP_FIELDS.has(k)) {
+      if (TIMESTAMP_FIELDS.has(k) || normalizedKey.includes('fecha')) {
         const ms = Number(v);
         if (!isNaN(ms) && ms > 1e12) {
           return new Date(ms).toLocaleDateString('es-CL', {

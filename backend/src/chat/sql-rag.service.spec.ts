@@ -139,4 +139,34 @@ describe('SqlRagService tenant isolation', () => {
       valor: '052_00514607-1',
     });
   });
+
+  it('builds deterministic provider query for follow-up questions with entity context', () => {
+    const { service } = createService();
+
+    const sql = (service as any).buildDeterministicFieldQuery(`
+Contexto reciente de la conversación:
+
+Usuario: puedes darme las fechas de emisión de los documentos de Yolito
+Asistente: La fecha de emisión para los documentos de Yolito es el 22 de septiembre de 2025.
+Usuario: el nombre del comprador es Yolito Balart Hnos. Ltda.
+
+Pregunta actual del usuario: ¿y cuál es el proveedor?
+`);
+
+    expect(sql).toContain('AS proveedor');
+    expect(sql).toContain('EXISTS');
+    expect(sql).toContain('ORDER BY d.filename, proveedor');
+  });
+
+  it('builds deterministic date query with distinct rows to avoid duplicates', () => {
+    const { service } = createService();
+
+    const sql = (service as any).buildDeterministicFieldQuery(
+      'puedes darme las fechas de emisión de los documentos de Yolito',
+    );
+
+    expect(sql).toContain('SELECT DISTINCT');
+    expect(sql).toContain("AS fecha_emision");
+    expect(sql).toContain('ORDER BY d.filename, fecha_emision');
+  });
 });
