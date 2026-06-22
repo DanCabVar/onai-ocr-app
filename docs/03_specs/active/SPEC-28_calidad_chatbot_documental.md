@@ -23,7 +23,7 @@ Esto indica que el problema ya no es solo del PoC híbrido de `T20`, sino de la c
 
 Incluye:
 
-- definir una capa semántica robusta para mapear preguntas ? intención ? campos candidatos;
+- definir una capa semántica robusta para mapear preguntas -> intención -> campos candidatos;
 - desacoplar lógica de consulta de heurísticas acopladas a un dataset puntual;
 - mejorar resolución de follow-ups multi-turno con memoria conversacional útil y acotada;
 - introducir validaciones automáticas para evitar duplicados, campos basura y resultados semánticamente incorrectos;
@@ -83,6 +83,50 @@ Excluye:
 - `cd backend && pnpm run build`
 - benchmark manual/semiautomático en QA con casos versionados
 - evidencia en `docs/04_trabajo/T28_calidad_chatbot_documental/README.md`
+
+## Plan inicial por fases
+
+### Fase 1 — Base semántica y benchmark
+
+Próximo arranque recomendado: crear benchmark versionado + matriz semántica base antes de tocar más lógica productiva.
+
+- definir catálogo de intenciones de primer nivel:
+  - `count_documents`
+  - `list_document_types`
+  - `list_issue_dates`
+  - `list_order_numbers`
+  - `list_supplier_names`
+  - `list_customer_names`
+  - `list_totals`
+- construir matriz `intención -> campos candidatos -> campos excluidos`;
+- levantar benchmark QA mínimo con:
+  - preguntas simples;
+  - follow-ups;
+  - preguntas ambiguas;
+  - documentos de al menos 3 tipos distintos.
+
+### Fase 2 — Resolución de campos
+
+- implementar capa de resolución semántica de campos y labels;
+- priorizar `nombre_*` frente a `rut_*`, `telefono_*`, `correo_*`, `direccion_*`;
+- normalizar deduplicación, vacíos y variantes de formato;
+- reducir dependencia de heurísticas acopladas al dataset actual.
+
+### Fase 3 — Orquestación del chat
+
+- definir cuándo usar:
+  - ruta determinística;
+  - SQL-RAG generativo;
+  - híbrido/fallback;
+- agregar trazabilidad suficiente para depurar decisiones sin exponer internals peligrosos al usuario final;
+- medir latencia por estrategia.
+
+### Fase 4 — Regresiones y cierre
+
+- fijar regresiones automatizadas por intención crítica;
+- correr benchmark QA completo;
+- documentar precisión percibida y límites conocidos;
+- decidir si parte del trabajo vuelve a `T20` o queda 100% absorbido por `T28`.
 
 ## Riesgos
 

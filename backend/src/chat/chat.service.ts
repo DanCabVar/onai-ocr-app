@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { SqlRagService, SqlRagResult } from './sql-rag.service';
+import { SqlRagService, SqlRagResult, ChatStrategy } from './sql-rag.service';
 import { GraphRagService } from './graph-rag.service';
+import { ChatIntent } from './query-intent.service';
 import { QueryDto, ChatHistoryMessageDto } from './dto/query.dto';
 import { User } from '../database/entities/user.entity';
 
@@ -9,6 +10,10 @@ export interface ChatQueryResult {
   query?: string;
   data?: Record<string, any>[];
   source?: 'sql' | 'hybrid';
+  /** Ruta que respondió (determinística / generativa / general). */
+  strategy?: ChatStrategy;
+  /** Intención semántica detectada para la pregunta. */
+  intent?: ChatIntent;
   metrics?: {
     graphMs?: number;
     sqlMs: number;
@@ -65,6 +70,8 @@ export class ChatService {
           query: sqlResult.query,
           data: sqlResult.data,
           source: 'hybrid',
+          strategy: sqlResult.strategy,
+          intent: sqlResult.intent,
           metrics: {
             graphMs,
             sqlMs,
@@ -91,6 +98,8 @@ export class ChatService {
       query: result.query,
       data: result.data,
       source: 'sql',
+      strategy: result.strategy,
+      intent: result.intent,
       metrics: {
         sqlMs,
         totalMs,
@@ -122,7 +131,7 @@ export class ChatService {
       .join('\n');
 
     return [
-      'Contexto reciente de la conversaci�n:',
+      'Contexto reciente de la conversaci�n:',
       transcript,
       `Pregunta actual del usuario: ${normalizedQuery}`,
       'Resuelve la pregunta actual usando el contexto anterior cuando haga falta, pero sin inventar datos.',
