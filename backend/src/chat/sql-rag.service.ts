@@ -362,8 +362,14 @@ CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') proveedor
 WHERE d.user_id = $1
   AND (${entityConditions})
   AND (
-    lower(proveedor->>'name') LIKE '%proveedor%'
-    OR lower(proveedor->>'label') LIKE '%proveedor%'
+    (
+      lower(proveedor->>'name') LIKE '%nombre%'
+      AND lower(proveedor->>'name') LIKE '%proveedor%'
+    )
+    OR (
+      lower(proveedor->>'label') LIKE '%nombre%'
+      AND lower(proveedor->>'label') LIKE '%proveedor%'
+    )
   )
   AND trim(coalesce(proveedor->>'value', '')) <> ''
   AND lower(trim(coalesce(proveedor->>'value', ''))) NOT IN ('sin valor', '—', '-')
