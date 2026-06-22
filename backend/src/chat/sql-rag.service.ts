@@ -348,15 +348,36 @@ Solo la query SQL, sin backticks ni explicaciones. Si no puedes, responde: NO_SQ
    * - avoids production/QA drift due to manual RLS/view rollout gaps
    */
   private rewriteTenantViewsAsScopedSubqueries(sql: string): string {
-    return sql
-      .replace(
-        /\bmy_documents\b/gi,
-        '(SELECT * FROM documents WHERE user_id = $1)',
-      )
-      .replace(
-        /\bmy_document_types\b/gi,
-        '(SELECT * FROM document_types WHERE user_id = $1)',
+    const rewriteRelation = (
+      input: string,
+      logicalName: 'my_documents' | 'my_document_types',
+      physicalTable: 'documents' | 'document_types',
+      defaultAlias: string,
+    ) =>
+      input.replace(
+        new RegExp(
+          `\\b(FROM|JOIN)\\s+${logicalName}(?:\\s+(?:AS\\s+)?(?!WHERE\\b|JOIN\\b|ON\\b|GROUP\\b|ORDER\\b|LIMIT\\b|OFFSET\\b|HAVING\\b|UNION\\b)([a-zA-Z_][\\w]*))?`,
+          'gi',
+        ),
+        (_, clause: string, alias?: string) =>
+          `${clause} (SELECT * FROM ${physicalTable} WHERE user_id = $1) ${alias || defaultAlias}`,
       );
+
+    let rewritten = sql;
+    rewritten = rewriteRelation(
+      rewritten,
+      'my_documents',
+      'documents',
+      'my_documents',
+    );
+    rewritten = rewriteRelation(
+      rewritten,
+      'my_document_types',
+      'document_types',
+      'my_document_types',
+    );
+
+    return rewritten;
   }
 
   /**
