@@ -1,0 +1,84 @@
+name: Deploy to QA
+
+on:
+  push:
+    branches: [qa]
+
+concurrency:
+  group: deploy-qa
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/dancabvar/onai-ocr
+
+jobs:
+  build-and-push:
+    name: Build & Push Images (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [backend, frontend, processor]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+          tags: |
+            type=raw,value=qa
+            type=sha,prefix=qa-
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to QA Server
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: qa
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.QA_DEPLOY_HOST || secrets.DEPLOY_HOST }}
+          username: ${{ secrets.QA_DEPLOY_USER || secrets.DEPLOY_USER }}
+          key: ${{ secrets.QA_DEPLOY_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.QA_DEPLOY_PORT || secrets.DEPLOY_PORT }}
+          command_timeout: 20m
+          script: |
+            set -e
+            cd ${{ secrets.QA_APP_PATH || '/docker/onai-ocr-qa' }}
+            docker compose pull
+            docker compose up -d postgres
+            docker compose run --rm backend pnpm db:migrate
+            docker compose up -d --remove-orphans
+            docker image prune -f
+
+            echo "Waiting for QA services..."
+            sleep 15
+            docker compose ps
+            curl -sf https://qa-ocr.moti.cl/api/auth/health
+            echo "✅ QA deploy + migrations completado: $(date)"

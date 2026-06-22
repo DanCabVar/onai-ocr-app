@@ -98,3 +98,8 @@ cd /docker/onai-ocr && docker compose ps
 ## Estado inicial de esta regla
 
 El 2026-06-01 se creó `dev` como clon de `deploy/all-features`, se promovió `dev → qa` y luego `qa → master`. Desde este punto, el flujo esperado es trabajar specs en ramas separadas y promover exclusivamente por `dev → qa → master`.
+
+## Nota adicional para cambios de schema
+
+- Si una promoci�n `dev ? qa` toca schema/DB, QA debe ejecutar `pnpm db:migrate` en el contenedor backend antes de levantar completamente la app.
+- Si una promoci�n `qa ? master` toca schema/DB, producci�n debe crear backup previo y luego ejecutar `pnpm db:migrate` antes de considerar el deploy exitoso.
