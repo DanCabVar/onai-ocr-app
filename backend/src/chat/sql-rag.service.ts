@@ -194,7 +194,7 @@ export class SqlRagService {
           t.fieldSchema?.fields
             ?.map(
               (f) =>
-                `    - "${f.name}" (${f.type}): ${f.label}${f.required ? ' [required]' : ''}`,
+                `    - "${f.name}" (${f.type}): ${f.label}${f.required ? ' [required]' : ''}${this.buildFieldAliasSuffix(f.name, f.label)}`,
             )
             .join('\n') || '    (sin campos definidos)';
         return `  Tipo "${t.name}" (id=${t.id}, ${count} documentos):\n${fields}`;
@@ -231,10 +231,28 @@ IMPORTANTE: SOLO puedes consultar las vistas my_documents y my_document_types. N
 Patrones de acceso JSONB para extracted_data:
   - Resumen del documento: extracted_data->>'summary'
   - Campo "fields" es un array de objetos: [{name, value, type, label}]
+  - SIEMPRE considera tanto f->>'name' como f->>'label' para encontrar el campo correcto
+  - Cuando el usuario pregunte por comprador, proveedor, emisor, cliente, facturación o despacho, usa coincidencias flexibles con ILIKE sobre name/label
+  - Cuando el usuario mencione una empresa o persona (ej. "Yolito"), busca esa entidad con ILIKE en f->>'value' y no con igualdad exacta
   - Para acceder a un campo específico por nombre, usa jsonb_array_elements:
       SELECT d.*, f->>'value' AS valor
       FROM my_documents d, jsonb_array_elements(d.extracted_data->'fields') f
       WHERE f->>'name' = 'nombre_campo' AND d.user_id = $1
+  - Ejemplo robusto por etiqueta/alias:
+      SELECT d.filename, fecha->>'value' AS fecha_emision
+      FROM my_documents d
+      CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') participante
+      CROSS JOIN LATERAL jsonb_array_elements(d.extracted_data->'fields') fecha
+      WHERE d.user_id = $1
+        AND (
+          lower(participante->>'name') LIKE '%comprador%'
+          OR lower(participante->>'label') LIKE '%comprador%'
+        )
+        AND lower(participante->>'value') LIKE '%yolito%'
+        AND (
+          lower(fecha->>'name') LIKE '%fecha_emision%'
+          OR lower(fecha->>'label') LIKE '%fecha de emisión%'
+        )
   - Para sumar valores numéricos de un campo:
       SELECT SUM((f->>'value')::numeric)
       FROM my_documents d, jsonb_array_elements(d.extracted_data->'fields') f
@@ -243,6 +261,31 @@ Patrones de acceso JSONB para extracted_data:
   - Para filtrar por tipo: JOIN my_document_types dt ON d.document_type_id = dt.id
 
 IMPORTANTE: user_id siempre se pasa como parámetro $1. Usa $1 en WHERE, nunca el valor directo.`;
+  }
+
+  private buildFieldAliasSuffix(name: string, label: string): string {
+    const aliases = new Set<string>();
+    const collectTokens = (value: string) => {
+      this.normalizeText(value)
+        .split(/\s+/)
+        .filter((token) => token.length >= 4)
+        .forEach((token) => aliases.add(token));
+    };
+
+    collectTokens(name.replace(/[_()]+/g, ' '));
+    collectTokens(label);
+
+    const orderedAliases = Array.from(aliases).slice(0, 8);
+    return orderedAliases.length > 0
+      ? ` | alias de búsqueda: ${orderedAliases.join(', ')}`
+      : '';
+  }
+
+  private normalizeText(value: string): string {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
   }
 
   /**
@@ -266,6 +309,8 @@ REGLAS:
 5. JOIN my_document_types si necesitas el nombre del tipo
 6. Si la pregunta no es sobre documentos/datos, responde: NO_SQL
 7. Una sola query, sin punto y coma
+8. Si el usuario usa nombres de roles o etiquetas naturales ("comprador", "emisor", "proveedor", "fecha de emisión"), NO dependas solo del name exacto del campo: usa coincidencias flexibles sobre f->>'name' y f->>'label' con ILIKE/LOWER LIKE
+9. Si el usuario menciona una empresa/persona, búscala con coincidencia parcial en f->>'value'
 
 Pregunta: "${question}"
 

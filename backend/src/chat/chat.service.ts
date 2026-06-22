@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SqlRagService, SqlRagResult } from './sql-rag.service';
 import { GraphRagService } from './graph-rag.service';
-import { QueryDto } from './dto/query.dto';
+import { QueryDto, ChatHistoryMessageDto } from './dto/query.dto';
 import { User } from '../database/entities/user.entity';
 
 export interface ChatQueryResult {
@@ -25,31 +25,31 @@ export class ChatService {
     private readonly graphRagService: GraphRagService,
   ) {}
 
-  /**
-   * Process a natural language question about the user's documents.
-   * Delegates to SqlRagService for NL → SQL → execute → format.
-   */
   async getQueryResponse(
     queryDto: QueryDto,
     user: User,
   ): Promise<ChatQueryResult> {
-    const { query } = queryDto;
-    this.logger.log(`Chat query from user ${user.id}: "${query}"`);
+    const contextualQuery = this.buildContextualQuery(
+      queryDto.query,
+      queryDto.history,
+    );
+
+    this.logger.log(`Chat query from user ${user.id}: "${queryDto.query}"`);
     const startedAt = Date.now();
 
     if (
       this.graphRagService.isEnabled() &&
-      this.graphRagService.shouldUseGraph(query)
+      this.graphRagService.shouldUseGraph(contextualQuery)
     ) {
       const graphStartedAt = Date.now();
       try {
         const graphResult = await this.graphRagService.answerRelationalQuestion(
-          query,
+          contextualQuery,
           user.id,
         );
         const sqlStartedAt = Date.now();
         const sqlResult: SqlRagResult = await this.sqlRagService.query(
-          query,
+          contextualQuery,
           user.id,
         );
         const sqlMs = Date.now() - sqlStartedAt;
@@ -62,6 +62,8 @@ export class ChatService {
 
         return {
           answer: `${sqlResult.answer}\n\nRelaciones detectadas (grafo):\n${graphResult.graphAnswer}`,
+          query: sqlResult.query,
+          data: sqlResult.data,
           source: 'hybrid',
           metrics: {
             graphMs,
@@ -78,21 +80,52 @@ export class ChatService {
 
     const sqlStartedAt = Date.now();
     const result: SqlRagResult = await this.sqlRagService.query(
-      query,
+      contextualQuery,
       user.id,
     );
     const sqlMs = Date.now() - sqlStartedAt;
     const totalMs = Date.now() - startedAt;
 
-    // Return only the answer — do NOT expose the raw SQL query or raw data rows
-    // to avoid leaking internal DB schema to clients.
     return {
       answer: result.answer,
+      query: result.query,
+      data: result.data,
       source: 'sql',
       metrics: {
         sqlMs,
         totalMs,
       },
     };
+  }
+
+  private buildContextualQuery(
+    query: string,
+    history?: ChatHistoryMessageDto[],
+  ): string {
+    const normalizedQuery = query.trim();
+    if (!history || history.length === 0) {
+      return normalizedQuery;
+    }
+
+    const recentHistory = history
+      .filter((message) => message.content?.trim())
+      .slice(-4);
+
+    if (recentHistory.length === 0) {
+      return normalizedQuery;
+    }
+
+    const transcript = recentHistory
+      .map((message) =>
+        `${message.role === 'user' ? 'Usuario' : 'Asistente'}: ${message.content.trim()}`,
+      )
+      .join('\n');
+
+    return [
+      'Contexto reciente de la conversaci�n:',
+      transcript,
+      `Pregunta actual del usuario: ${normalizedQuery}`,
+      'Resuelve la pregunta actual usando el contexto anterior cuando haga falta, pero sin inventar datos.',
+    ].join('\n\n');
   }
 }
