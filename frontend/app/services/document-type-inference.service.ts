@@ -1,5 +1,4 @@
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'https://ocr.moti.cl/api'
+const API_BASE_URL = '/api'
 
 export interface ProgressEvent {
   status: 'processing' | 'completed' | 'failed'
