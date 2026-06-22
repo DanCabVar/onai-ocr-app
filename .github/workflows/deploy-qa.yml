@@ -67,11 +67,13 @@ jobs:
           username: ${{ secrets.QA_DEPLOY_USER || secrets.DEPLOY_USER }}
           key: ${{ secrets.QA_DEPLOY_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.QA_DEPLOY_PORT || secrets.DEPLOY_PORT }}
-          command_timeout: 15m
+          command_timeout: 20m
           script: |
             set -e
             cd ${{ secrets.QA_APP_PATH || '/docker/onai-ocr-qa' }}
             docker compose pull
+            docker compose up -d postgres
+            docker compose run --rm backend pnpm db:migrate
             docker compose up -d --remove-orphans
             docker image prune -f
 
@@ -79,4 +81,4 @@ jobs:
             sleep 15
             docker compose ps
             curl -sf https://qa-ocr.moti.cl/api/auth/health
-            echo "✅ QA deploy completado: $(date)"
+            echo "? QA deploy + migrations completado: $(date)"

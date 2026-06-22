@@ -13,9 +13,6 @@ env:
   IMAGE_PREFIX: ghcr.io/dancabvar/onai-ocr
 
 jobs:
-  # ─────────────────────────────────────
-  # Build & push images to GHCR
-  # ─────────────────────────────────────
   build-and-push:
     name: Build & Push Images
     runs-on: ubuntu-latest
@@ -45,9 +42,6 @@ jobs:
             ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:latest
             ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
 
-  # ─────────────────────────────────────
-  # Deploy to server via SSH
-  # ─────────────────────────────────────
   deploy:
     name: Deploy to Server
     needs: build-and-push
@@ -60,11 +54,19 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
-          command_timeout: 15m
+          command_timeout: 20m
           script: |
             set -e
             cd /docker/onai-ocr
+            backup_dir="./backups"
+            mkdir -p "$backup_dir"
+            backup_file="$backup_dir/pre-migration-$(date +%Y%m%d-%H%M%S).sql"
             docker compose pull
+            docker compose up -d postgres
+            docker compose exec -T postgres sh -lc 'PGPASSWORD="$DB_PASSWORD" pg_dump -U "$DB_USER" "$DB_NAME"' > "$backup_file"
+            echo "✅ Backup DB creado en $backup_file"
+            docker compose run --rm backend pnpm db:migrate
             docker compose up -d --remove-orphans
             docker image prune -f
-            echo "✅ Deploy completado: $(date)"
+            curl -sf https://ocr.moti.cl/api/auth/health
+            echo "✅ Deploy + migrations completado: $(date)"

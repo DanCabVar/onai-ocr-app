@@ -45,3 +45,56 @@ codex/spec-XX-* â†’ dev â†’ qa â†’ master
 - `deploy/all-features`: legacy temporal; no usar para trabajo nuevo ni promociones nuevas.
 
 Promover a producciÃ³n solo despuÃ©s de que QA haya terminado OK y tenga health/container check correcto.
+
+## Sección DB / migraciones
+
+- QA y producción no deben depender de `synchronize: true`.
+- El mecanismo canónico de schema es TypeORM con migraciones versionadas.
+- Scripts backend esperados:
+  - `pnpm db:show`
+  - `pnpm db:migrate`
+  - `pnpm db:revert`
+
+### QA
+
+Antes de levantar toda la app en `/docker/onai-ocr-qa`, el workflow debe:
+
+```bash
+docker compose pull
+docker compose up -d postgres
+docker compose run --rm backend pnpm db:migrate
+docker compose up -d --remove-orphans
+```
+
+Validación mínima:
+
+```bash
+curl -fsS https://qa-ocr.moti.cl/api/auth/health
+cd /docker/onai-ocr-qa && docker compose ps
+```
+
+### Producción
+
+Antes de correr migraciones en `/docker/onai-ocr`, crear backup y luego aplicar:
+
+```bash
+mkdir -p ./backups
+docker compose pull
+docker compose up -d postgres
+docker compose exec -T postgres sh -lc 'PGPASSWORD="$DB_PASSWORD" pg_dump -U "$DB_USER" "$DB_NAME"' > ./backups/pre-migration-YYYYMMDD-HHMMSS.sql
+docker compose run --rm backend pnpm db:migrate
+docker compose up -d --remove-orphans
+```
+
+Validación mínima:
+
+```bash
+curl -fsS https://ocr.moti.cl/api/auth/health
+cd /docker/onai-ocr && docker compose ps
+```
+
+### Regla operacional
+
+- No promover dumps de QA a producción.
+- Promover exclusivamente migraciones versionadas.
+- Usar `db:revert` solo si la migración tiene `down` seguro y probado.
