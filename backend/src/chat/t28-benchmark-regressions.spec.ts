@@ -70,6 +70,111 @@ describe('T28 benchmark regressions (deterministic chat path)', () => {
     );
   };
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Baseline validado manualmente en QA (iteración 3). Protege los casos que ya
+  // responden bien para que ninguna iteración futura los rompa.
+  // ───────────────────────────────────────────────────────────────────────────
+  describe('baseline QA validado — protección de regresión', () => {
+    const qi = new QueryIntentService();
+    const resolve = (history: string[], q: string) =>
+      qi.resolve(buildContextualQuery(history, q));
+
+    it('¿Cuántos documentos tengo? → conteo global de tenant', () => {
+      const r = resolve([], '¿Cuántos documentos tengo?');
+      expect(r.intent).toBe('count_documents');
+      expect(r.entity).toBeNull();
+      const sql = buildSql([], '¿Cuántos documentos tengo?');
+      expect(sql).toContain('COUNT(DISTINCT d.id)');
+      expect(sql).not.toContain('AND (lower(d.filename)');
+    });
+
+    it('¿Qué tipos de documentos tengo? → tipos reales + inferidos', () => {
+      const sql = buildSql([], '¿Qué tipos de documentos tengo?');
+      expect(sql).toContain('AS tipo_documento');
+      expect(sql).toContain('LEFT JOIN my_document_types');
+      expect(sql).toContain("d.inferred_data->>'inferred_type'");
+    });
+
+    it('¿Cuántos documentos de Yolito tengo? → conteo anclado a Yolito', () => {
+      const r = resolve([], '¿Cuántos documentos de Yolito tengo?');
+      expect(r.intent).toBe('count_documents');
+      expect(r.entity).toBe('yolito');
+      const sql = buildSql([], '¿Cuántos documentos de Yolito tengo?');
+      expect(sql).toContain('COUNT(DISTINCT d.id)');
+      expect(sql).toContain("lower(d.filename) LIKE '%yolito%'");
+    });
+
+    it('¿Qué tipos de documentos de Yolito tengo? → tipos anclados a Yolito', () => {
+      const sql = buildSql([], '¿Qué tipos de documentos de Yolito tengo?');
+      expect(sql).toContain('AS tipo_documento');
+      expect(sql).toContain("d.inferred_data->>'inferred_type'");
+      expect(sql).toContain("lower(d.filename) LIKE '%yolito%'");
+    });
+
+    it('¿Cuáles son las fechas de emisión de los documentos de Yolito?', () => {
+      const r = resolve([], '¿Cuáles son las fechas de emisión de los documentos de Yolito?');
+      expect(r.intent).toBe('list_issue_dates');
+      expect(r.entity).toBe('yolito');
+      const sql = buildSql([], '¿Cuáles son las fechas de emisión de los documentos de Yolito?');
+      expect(sql).toContain('AS fecha_emision');
+      expect(sql).toContain("lower(d.filename) LIKE '%yolito%'");
+    });
+
+    it('¿Quién es el cliente en OC_Yolito.pdf? → filename exclusivo', () => {
+      const r = resolve([], '¿Quién es el cliente en OC_Yolito.pdf?');
+      expect(r.intent).toBe('list_customer_names');
+      expect(r.entityIsFilename).toBe(true);
+      const sql = buildSql([], '¿Quién es el cliente en OC_Yolito.pdf?');
+      expect(sql).toContain('AS cliente');
+      expect(sql).toContain("lower(d.filename) LIKE '%oc_yolito.pdf%'");
+      expect(sql).not.toContain('EXISTS');
+    });
+
+    it('¿Quién es el proveedor en OC_Yolito2.pdf? → filename exclusivo (obligatorio)', () => {
+      const r = resolve([], '¿Quién es el proveedor en OC_Yolito2.pdf?');
+      expect(r.intent).toBe('list_supplier_names');
+      expect(r.entityIsFilename).toBe(true);
+      expect(qi.isAmbiguousEntity(r)).toBe(false);
+      const sql = buildSql([], '¿Quién es el proveedor en OC_Yolito2.pdf?');
+      expect(sql).toContain('AS proveedor');
+      expect(sql).toContain("lower(d.filename) LIKE '%oc_yolito2.pdf%'");
+      expect(sql).not.toContain("LIKE '%oc_yolito.pdf%'");
+      expect(sql).not.toContain('EXISTS');
+    });
+
+    it('¿Qué fecha de emisión tiene OC_Yolito2.pdf? → filename exclusivo', () => {
+      const sql = buildSql([], '¿Qué fecha de emisión tiene OC_Yolito2.pdf?');
+      expect(sql).toContain('AS fecha_emision');
+      expect(sql).toContain("lower(d.filename) LIKE '%oc_yolito2.pdf%'");
+      expect(sql).not.toContain('ocr_raw_text');
+    });
+
+    it('¿Cuál es el número de orden de compra de OC_Yolito2.pdf? → filename + tipo OC', () => {
+      const r = resolve([], '¿Cuál es el número de orden de compra de OC_Yolito2.pdf?');
+      expect(r.intent).toBe('list_order_numbers');
+      expect(r.entityIsFilename).toBe(true);
+      const sql = buildSql([], '¿Cuál es el número de orden de compra de OC_Yolito2.pdf?');
+      expect(sql).toContain('AS numero_orden_compra');
+      expect(sql).toContain("lower(d.filename) LIKE '%oc_yolito2.pdf%'");
+      expect(sql).toContain("lower(coalesce(dt.name, '')) LIKE '%orden de compra%'");
+    });
+
+    it('contexto + ¿Cuál es el proveedor? → entidad del contexto, no ambiguo', () => {
+      const r = resolve(
+        ['Usuario: el nombre del comprador es Yolito Balart Hnos. Ltda.'],
+        '¿Cuál es el proveedor?',
+      );
+      expect(r.intent).toBe('list_supplier_names');
+      expect(r.entity).toBe('yolito balart hnos');
+      expect(qi.isAmbiguousEntity(r)).toBe(false);
+    });
+
+    it('¿Cuál es el proveedor de Grupo TX? y de Yolito → ambos ambiguos', () => {
+      expect(qi.isAmbiguousEntity(resolve([], '¿Cuál es el proveedor de Grupo TX?'))).toBe(true);
+      expect(qi.isAmbiguousEntity(resolve([], '¿Cuál es el proveedor de Yolito?'))).toBe(true);
+    });
+  });
+
   it('T28-003: fechas de emisión de Yolito → deduplicadas y ancladas a la entidad', () => {
     const sql = buildSql(
       [],
@@ -291,6 +396,16 @@ describe('T28 benchmark regressions (deterministic chat path)', () => {
       ]);
       expect(answer).toContain('Orden de Compra');
       expect(answer).toContain('Orden de Despacho');
+    });
+
+    it('acknowledgement estructurado: ecoa rol + entidad como ancla', () => {
+      const ack = (createService() as any).buildClarificationAck(
+        'Yolito Balart Hnos',
+        'comprador',
+      );
+      expect(ack).toContain('el comprador');
+      expect(ack).toContain('Yolito Balart Hnos');
+      expect(ack.toLowerCase()).toContain('filtro');
     });
   });
 
