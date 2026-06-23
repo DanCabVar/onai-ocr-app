@@ -368,3 +368,75 @@ Orden de Compra: …") para que sea transparente.
   diseño; si el negocio pide lo contrario, crear intención separada (no ampliar
   implícitamente).
 - Confirmación funcional final de `T28-006/010/014/015` es en QA con datos reales.
+
+## Iteración 4 — baseline blindado + memoria conversacional estructurada (2026-06-22)
+
+Validación manual en QA confirmó el baseline (10 casos OK, incluida la
+ambigüedad de "proveedor de Grupo TX" y "proveedor de Yolito"). Esta iteración
+(1) protege ese baseline con regresiones automáticas y (2) refuerza la memoria
+conversacional para que las aclaraciones se vuelvan filtros persistentes.
+
+### 1. Baseline blindado con regresiones
+
+Nuevo bloque "baseline QA validado — protección de regresión" en
+`t28-benchmark-regressions.spec.ts` con las preguntas exactas validadas:
+conteo global/por entidad, tipos global/por entidad (real+inferido), fechas por
+entidad, cliente/proveedor por filename exclusivo, número de OC por filename +
+tipo, proveedor heredado de contexto (no ambiguo) y ambigüedad de "proveedor de
+Grupo TX"/"proveedor de Yolito". Si una iteración futura rompe cualquiera, el
+test falla.
+
+### 2. Memoria conversacional estructurada
+
+Se generaliza la resolución de entidad como **estado estructurado** de la
+conversación (no un simple acknowledgement):
+
+- **Roles explícitos**: además de "el nombre del comprador es X" se reconoce
+  "el comprador es X", "el proveedor es X", "el cliente es X" (patrón
+  `(el) ROLE (es|:) X`), capturando `entityRole` + `entityRaw` (texto original).
+- **Anclas de scope**: "me refiero al archivo X.pdf" (→ filename exclusivo),
+  "hablo de los documentos de X", "sobre los documentos de X" (→ entidad).
+- **Herencia más reciente primero**: en follow-ups, el contexto se lee de los
+  turnos del **usuario** de más nuevo a más antiguo, de modo que el último dato
+  aportado gana como filtro persistente.
+- **Acknowledgement como ancla operativa**: ahora ecoa el dato registrado
+  ("Anotado: tomaré el comprador «Yolito Balart Hnos» como filtro de esta
+  conversación…") en vez de un mensaje genérico. `entityIsFilename` se desacopla
+  del `source` para que un archivo heredado de contexto siga anclando por
+  filename exacto.
+
+`ResolvedQueryIntent` se amplía con `entityRaw`, `entityRole` e `isFilename`.
+
+### Criterio de seguridad mantenido
+
+- Entidad ambigua (ancla débil "de X" en pregunta por nombre) ⇒ pide aclaración;
+  no inventa rol. Anclas fuertes (filename/rol/scope/contexto) responden directo.
+- Aislamiento multi-tenant intacto (`$1` + vistas tenant-scoped + RLS).
+
+### Enfoque general (no ad hoc)
+
+La resolución cruza de forma consistente: **entidad mencionada → rol consultado
+→ documento/archivo objetivo → tipo documental → contexto previo**. No hay reglas
+"para Yolito" ni "para Grupo TX"; son patrones de lenguaje y de campo genéricos.
+
+### Tests ejecutados (iteración 4)
+
+- `cd backend && pnpm test` → **7 suites / 71 tests en verde**.
+- `cd backend && pnpm run build` → OK.
+
+### Cubierto vs pendiente
+
+- **Cubierto y protegido por regresión**: los 10 casos del baseline QA + memoria
+  estructurada (rol/archivo/scope, herencia reciente, ack con eco) + ambigüedad.
+- **Pendiente (mejora futura, no bloqueante)**: persistencia de slots más rica
+  (varias entidades/roles simultáneos en una misma conversación, p. ej. comprador
+  + proveedor + archivo a la vez); hoy se resuelve un ancla dominante por turno.
+  Validación funcional final en QA con datos reales.
+
+### Riesgos pendientes
+
+- Los nuevos patrones de scope ("sobre", "me refiero a") son amplios; se acotan
+  con stopwords y `isGenericEntityPhrase`, pero conviene vigilar falsos positivos
+  en QA.
+- La memoria sigue derivándose del `history` por request (sin store de sesión);
+  es robusta mientras el frontend envíe el historial.

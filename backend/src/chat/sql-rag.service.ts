@@ -10,7 +10,11 @@ import { Repository, DataSource } from 'typeorm';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Document } from '../database/entities/document.entity';
 import { DocumentType } from '../database/entities/document-type.entity';
-import { QueryIntentService, ChatIntent } from './query-intent.service';
+import {
+  QueryIntentService,
+  ChatIntent,
+  EntityRole,
+} from './query-intent.service';
 import { FieldResolutionService } from './field-resolution.service';
 
 /** Maximum rows returned from a single query */
@@ -105,10 +109,13 @@ export class SqlRagService {
       //     and keep context instead of running SQL that returns no rows (T28-015)
       if (this.queryIntent.isClarificationStatement(resolved.currentQuestion)) {
         this.logger.log(
-          `SQL RAG route user=${userId} intent=${resolved.intent} strategy=clarification`,
+          `SQL RAG route user=${userId} intent=${resolved.intent} strategy=clarification role=${resolved.entityRole ?? '-'}`,
         );
         return {
-          answer: this.buildClarificationAck(),
+          answer: this.buildClarificationAck(
+            resolved.entityRaw,
+            resolved.entityRole,
+          ),
           strategy: 'general',
           intent: resolved.intent,
         };
@@ -421,10 +428,23 @@ IMPORTANTE: user_id siempre se pasa como parámetro $1. Usa $1 en WHERE, nunca e
   }
 
   /**
-   * Respuesta a un statement de aclaración: conserva el contexto e invita a la
-   * siguiente consulta, sin afirmar "sin resultados" (T28-015).
+   * Respuesta a un statement de aclaración. Registra el dato como ancla
+   * operativa de la conversación (eco de entidad + rol) para que los follow-ups
+   * lo reutilicen sin repetir, sin afirmar "sin resultados" (T28-015).
    */
-  private buildClarificationAck(): string {
+  private buildClarificationAck(
+    entityRaw: string | null,
+    role: EntityRole | null,
+  ): string {
+    if (entityRaw) {
+      const roleLabel = role ? `el ${role}` : 'la entidad';
+      return (
+        `Anotado: tomaré ${roleLabel} «${entityRaw}» como filtro de esta ` +
+        'conversación, así no necesitas repetirlo. ¿Qué quieres saber sobre ' +
+        'esos documentos? Por ejemplo: sus fechas de emisión, tipos de ' +
+        'documento, números de orden de compra o el proveedor.'
+      );
+    }
     return (
       'Entendido, lo tomo en cuenta para tu próxima consulta. ' +
       '¿Qué te gustaría saber? Por ejemplo: fechas de emisión, tipos de ' +

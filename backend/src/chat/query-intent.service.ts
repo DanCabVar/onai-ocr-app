@@ -27,17 +27,39 @@ export type ChatIntent =
  */
 export type EntitySource = 'filename' | 'role' | 'scope' | 'loose' | 'context';
 
+/** Rol explícito declarado por el usuario para una entidad. */
+export type EntityRole =
+  | 'comprador'
+  | 'proveedor'
+  | 'cliente'
+  | 'emisor'
+  | 'receptor';
+
 export interface ResolvedQueryIntent {
   /** Intención semántica de la pregunta actual. */
   intent: ChatIntent;
-  /** Entidad rastreada (proveedor/comprador/empresa) o null si no se detecta. */
+  /** Entidad rastreada (normalizada para matching) o null si no se detecta. */
   entity: string | null;
+  /** Texto original de la entidad, para mostrar al usuario (acknowledgement). */
+  entityRaw: string | null;
   /** Origen de la entidad, para calibrar confianza/ambigüedad. */
   entitySource: EntitySource | null;
+  /** Rol declarado para la entidad ("el comprador es X" → 'comprador'). */
+  entityRole: EntityRole | null;
   /** Indica si la entidad es un nombre de archivo (scope por documento exacto). */
   entityIsFilename: boolean;
   /** Texto de la pregunta actual, ya separado del contexto conversacional. */
   currentQuestion: string;
+}
+
+/** Resultado interno de extracción de entidad desde un texto. */
+interface EntityHit {
+  entity: string;
+  entityRaw: string;
+  source: EntitySource;
+  role: EntityRole | null;
+  /** La entidad es un nombre de archivo (independiente del origen). */
+  isFilename: boolean;
 }
 
 /**
@@ -84,13 +106,15 @@ export class QueryIntentService {
    */
   resolve(question: string): ResolvedQueryIntent {
     const currentQuestion = this.extractCurrentQuestion(question);
-    const resolvedEntity = this.resolveEntity(question, currentQuestion);
+    const hit = this.resolveEntity(question, currentQuestion);
     const intent = this.classifyIntent(currentQuestion);
     return {
       intent,
-      entity: resolvedEntity.entity,
-      entitySource: resolvedEntity.source,
-      entityIsFilename: resolvedEntity.source === 'filename',
+      entity: hit?.entity ?? null,
+      entityRaw: hit?.entityRaw ?? null,
+      entitySource: hit?.source ?? null,
+      entityRole: hit?.role ?? null,
+      entityIsFilename: hit?.isFilename ?? false,
       currentQuestion,
     };
   }
@@ -197,8 +221,10 @@ export class QueryIntentService {
    * hay entidad, hereda del contexto de turnos previos del usuario.
    */
   extractTrackedEntity(question: string): string | null {
-    return this.resolveEntity(question, this.extractCurrentQuestion(question))
-      .entity;
+    return (
+      this.resolveEntity(question, this.extractCurrentQuestion(question))
+        ?.entity ?? null
+    );
   }
 
   /**
@@ -207,59 +233,26 @@ export class QueryIntentService {
    * Crítico para el scoping: si un turno previo (sobre todo del asistente)
    * mencionó otro archivo/entidad, no debe contaminar la pregunta actual. Solo
    * cuando la pregunta actual no aporta entidad se hereda del contexto, y
-   * exclusivamente de turnos del USUARIO (nunca de lo que respondió el bot).
+   * exclusivamente de turnos del USUARIO (nunca de lo que respondió el bot),
+   * tomando el ancla más RECIENTE (memoria conversacional estructurada).
    */
   private resolveEntity(
     fullQuestion: string,
     currentQuestion: string,
-  ): { entity: string | null; source: EntitySource | null } {
+  ): EntityHit | null {
     const fromCurrent = this.extractEntityFrom(currentQuestion);
     if (fromCurrent) {
       return fromCurrent;
     }
 
-    const userContext = this.collectUserContext(fullQuestion);
-    if (userContext) {
-      const fromContext = this.extractEntityFrom(userContext);
+    // Recorre los turnos del usuario del más reciente al más antiguo, para que
+    // el último dato aportado ("el comprador es X", "me refiero al archivo Y")
+    // gane como filtro persistente de la conversación.
+    const userLines = this.collectUserLines(fullQuestion);
+    for (let i = userLines.length - 1; i >= 0; i--) {
+      const fromContext = this.extractEntityFrom(userLines[i]);
       if (fromContext) {
-        return { entity: fromContext.entity, source: 'context' };
-      }
-    }
-
-    return { entity: null, source: null };
-  }
-
-  /**
-   * Extrae una entidad desde un texto acotado, en orden de fuerza del ancla:
-   * nombre de archivo → rol explícito → "documentos de X" → "de X" (débil).
-   */
-  private extractEntityFrom(
-    text: string,
-  ): { entity: string; source: EntitySource } | null {
-    const fileMatch = text.match(this.filenamePattern);
-    if (fileMatch?.[1]) {
-      return { entity: fileMatch[1].trim(), source: 'filename' };
-    }
-
-    const candidates: Array<{ pattern: RegExp; source: EntitySource }> = [
-      {
-        pattern:
-          /nombre del (?:comprador|proveedor|emisor|cliente)[^.\n]* es ([^\n.]+)/i,
-        source: 'role',
-      },
-      { pattern: /documentos de ([^\n?.]+)/i, source: 'scope' },
-      { pattern: /de ([A-Za-zÁÉÍÓÚáéíóúÑñ0-9 .&_-]{3,})/i, source: 'loose' },
-    ];
-
-    for (const { pattern, source } of candidates) {
-      const match = text.match(pattern);
-      const value = match?.[1]?.trim();
-      if (!value || this.isGenericEntityPhrase(value)) {
-        continue;
-      }
-      const cleaned = this.cleanEntity(value);
-      if (cleaned && !this.isGenericEntityPhrase(cleaned)) {
-        return { entity: cleaned, source };
+        return { ...fromContext, source: 'context' };
       }
     }
 
@@ -267,16 +260,112 @@ export class QueryIntentService {
   }
 
   /**
-   * Reúne solo los turnos del USUARIO del contexto reciente, descartando lo que
-   * respondió el asistente (evita heredar archivos/entidades que el bot citó).
+   * Extrae una entidad desde un texto acotado, en orden de fuerza del ancla:
+   * archivo → rol explícito ("(el) comprador es X") → scope ("documentos de X",
+   * "me refiero a X") → "de X" (débil).
    */
-  private collectUserContext(question: string): string {
+  private extractEntityFrom(text: string): EntityHit | null {
+    // 1. Nombre de archivo (ancla por documento exacto).
+    const fileMatch = text.match(this.filenamePattern);
+    if (fileMatch?.[1]) {
+      const raw = fileMatch[1].trim();
+      return {
+        entity: raw,
+        entityRaw: raw,
+        source: 'filename',
+        role: null,
+        isFilename: true,
+      };
+    }
+
+    // 2. Rol explícito: "(el nombre del | el) ROLE (es|:) X".
+    const roleMatch = text.match(
+      /(?:nombre\s+del?\s+|el\s+)?(comprador|proveedor|cliente|emisor|receptor)\b\s*(?:es|:)\s+([^\n.,?¿!]+)/i,
+    );
+    if (roleMatch) {
+      const role = this.normalizeText(roleMatch[1]) as EntityRole;
+      const raw = roleMatch[2].trim();
+      const cleaned = this.cleanEntity(raw);
+      if (cleaned && !this.isGenericEntityPhrase(cleaned)) {
+        return {
+          entity: cleaned,
+          entityRaw: raw,
+          source: 'role',
+          role,
+          isFilename: false,
+        };
+      }
+    }
+
+    // 3. Scope explícito por entidad o documento.
+    const scopePatterns = [
+      /(?:documentos?|[oó]rdenes?|facturas?)\s+de\s+([^\n?.]+)/i,
+      /me\s+refiero\s+a(?:l)?\s+(?:archivo|documento|los\s+documentos\s+de|la\s+|el\s+)?\s*([^\n?.]+)/i,
+      /hablo\s+de\s+(?:los?\s+)?(?:documentos?\s+de\s+)?([^\n?.]+)/i,
+      /sobre\s+(?:los?\s+)?(?:documentos?\s+de\s+)?([^\n?.]+)/i,
+    ];
+    for (const pattern of scopePatterns) {
+      const match = text.match(pattern);
+      const value = match?.[1]?.trim();
+      if (!value || this.isGenericEntityPhrase(value)) {
+        continue;
+      }
+      // Si lo referido es un archivo, devolver como ancla de filename.
+      const fileInScope = value.match(this.filenamePattern);
+      if (fileInScope?.[1]) {
+        const raw = fileInScope[1].trim();
+        return {
+          entity: raw,
+          entityRaw: raw,
+          source: 'filename',
+          role: null,
+          isFilename: true,
+        };
+      }
+      const cleaned = this.cleanEntity(value);
+      if (cleaned && !this.isGenericEntityPhrase(cleaned)) {
+        return {
+          entity: cleaned,
+          entityRaw: value,
+          source: 'scope',
+          role: null,
+          isFilename: false,
+        };
+      }
+    }
+
+    // 4. Patrón débil de respaldo "de X".
+    const looseMatch = text.match(
+      /de ([A-Za-zÁÉÍÓÚáéíóúÑñ0-9 .&_-]{3,})/i,
+    );
+    const looseValue = looseMatch?.[1]?.trim();
+    if (looseValue && !this.isGenericEntityPhrase(looseValue)) {
+      const cleaned = this.cleanEntity(looseValue);
+      if (cleaned && !this.isGenericEntityPhrase(cleaned)) {
+        return {
+          entity: cleaned,
+          entityRaw: looseValue,
+          source: 'loose',
+          role: null,
+          isFilename: false,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Reúne, en orden cronológico, los turnos del USUARIO del contexto reciente,
+   * descartando lo que respondió el asistente (evita heredar archivos/entidades
+   * que el bot citó).
+   */
+  private collectUserLines(question: string): string[] {
     return question
       .split('\n')
       .filter((line) => /^\s*Usuario:/i.test(line))
       .map((line) => line.replace(/^\s*Usuario:\s*/i, '').trim())
-      .filter(Boolean)
-      .join('\n');
+      .filter(Boolean);
   }
 
   /**

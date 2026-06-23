@@ -147,6 +147,65 @@ describe('QueryIntentService', () => {
     });
   });
 
+  describe('memoria conversacional estructurada (T28 iter 4)', () => {
+    const withContext = (history: string[], current: string): string =>
+      [
+        'Contexto reciente de la conversación:',
+        history.join('\n'),
+        `Pregunta actual del usuario: ${current}`,
+        'Resuelve la pregunta actual usando el contexto anterior cuando haga falta.',
+      ].join('\n\n');
+
+    it('captura rol + entidad en "el comprador es X" (sin "nombre del")', () => {
+      const r = service.resolve('el comprador es Yolito Balart Hnos. Ltda.');
+      expect(r.entity).toBe('yolito balart hnos');
+      expect(r.entityRole).toBe('comprador');
+      expect(r.entityRaw).toBe('Yolito Balart Hnos');
+      expect(r.entitySource).toBe('role');
+    });
+
+    it('"me refiero al archivo X.pdf" ancla por filename', () => {
+      const r = service.resolve('me refiero al archivo OC_Yolito2.pdf');
+      expect(r.entity).toBe('OC_Yolito2.pdf');
+      expect(r.entityIsFilename).toBe(true);
+    });
+
+    it('"hablo de los documentos de X" ancla por entidad/scope', () => {
+      const r = service.resolve('hablo de los documentos de Yolito');
+      expect(r.entity).toBe('yolito');
+      expect(r.entitySource).toBe('scope');
+    });
+
+    it('hereda el ancla MÁS RECIENTE del usuario en un follow-up', () => {
+      const ctx = withContext(
+        [
+          'Usuario: hablo de los documentos de Sodimac',
+          'Usuario: el comprador es Yolito Balart Hnos. Ltda.',
+        ],
+        '¿y cuál es el proveedor?',
+      );
+      const r = service.resolve(ctx);
+      expect(r.entity).toBe('yolito balart hnos');
+      expect(r.entitySource).toBe('context');
+    });
+
+    it('un archivo referido antes se reutiliza como scope en el follow-up', () => {
+      const ctx = withContext(
+        ['Usuario: me refiero al archivo OC_Yolito2.pdf'],
+        '¿cuál es el proveedor?',
+      );
+      const r = service.resolve(ctx);
+      expect(r.entity).toBe('OC_Yolito2.pdf');
+      expect(r.entityIsFilename).toBe(true);
+    });
+
+    it('"proveedor de Yolito" sigue siendo ambiguo (ancla débil)', () => {
+      expect(
+        service.isAmbiguousEntity(service.resolve('¿cuál es el proveedor de Yolito?')),
+      ).toBe(true);
+    });
+  });
+
   describe('isClarificationStatement — statements de aclaración (T28-015)', () => {
     it('detecta el statement que aporta la entidad', () => {
       expect(
